@@ -268,7 +268,7 @@ class MainActivity : Activity() {
         row.addView(toggle)
         tile.addView(row); tile.addView(space(12))
         toggle.setOnCheckedChangeListener { _, enabled ->
-            if (key == "auto" && enabled) {
+            if (key == "auto" && enabled) {\n                ReplyStore.set(this, "ai_auto", false)
                 toggle.isChecked = false
                 AlertDialog.Builder(this).setTitle("অটো রিপ্লাই চালু করবেন?")
                     .setMessage("সমর্থিত নতুন নোটিফিকেশনে আপনার অনুমোদন ছাড়াই টেমপ্লেট উত্তর পাঠানো হতে পারে। এটি AI নয়। ভুল উত্তর যাওয়ার ঝুঁকি আছে।")
@@ -303,6 +303,33 @@ class MainActivity : Activity() {
         modes.addView(label("উত্তর দেখে অনুমোদন দিলে পাঠানোর চেষ্টা করবে", 13f, muted))
         modes.addView(space(15))
         toggle(modes, "অটোমেটিক রিপ্লাই", "সমর্থিত নোটিফিকেশনে টেমপ্লেট উত্তর", "auto")
+        modes.addView(space(10))
+        val aiAuto = Switch(this).apply {
+            text = "AI অটো রিপ্লাই (নিজের AI Gateway)"
+            textSize = 15f
+            isChecked = ReplyStore.enabled(this@MainActivity, "ai_auto")
+        }
+        modes.addView(aiAuto)
+        modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; দুই উত্তরের মাঝে অন্তত ৬০ সেকেন্ড। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
+        aiAuto.setOnCheckedChangeListener { _, checked ->
+            if (checked) {
+                aiAuto.isChecked = false
+                if (!AiEngine.configured(this)) {
+                    AlertDialog.Builder(this).setTitle("AI Gateway সংযুক্ত করুন")
+                        .setMessage("প্রথমে নিজের নিরাপদ HTTPS AI Gateway URL এবং access token দিন। সরাসরি OpenAI/Gemini API Key অ্যাপে দেবেন না।")
+                        .setPositiveButton("ঠিক আছে", null).show()
+                } else {
+                    AlertDialog.Builder(this).setTitle("AI অটো রিপ্লাই চালু?")
+                        .setMessage("নতুন নোটিফিকেশনের লেখা আপনার সংযুক্ত AI সার্ভারে পাঠানো হবে এবং উত্তর অনুমোদন ছাড়াই পাঠানোর চেষ্টা হবে। ভুল উত্তর বা API খরচ হতে পারে। গুরুত্বপূর্ণ কথোপকথনে এটি ব্যবহার করবেন না।")
+                        .setNegativeButton("বাতিল", null)
+                        .setPositiveButton("সম্মত, চালু করুন") { _, _ ->
+                            ReplyStore.set(this, "auto", false)
+                            ReplyStore.set(this, "ai_auto", true)
+                            aiAuto.isChecked = true
+                        }.show()
+                }
+            } else ReplyStore.set(this, "ai_auto", false)
+        }
         addCard(modes)
         val provider = card()
         provider.addView(label("✦ নিজের AI অ্যাকাউন্ট ব্যবহার করুন (BYOK)", 19f, dark, true))
