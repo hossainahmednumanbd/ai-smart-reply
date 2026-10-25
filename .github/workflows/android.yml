@@ -28,7 +28,7 @@ jobs:
         run: |
           echo "=== Android debug APK signing certificate ==="
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -Ei "SHA-1|SHA-256"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK"\n          echo "=== SHA-1 fingerprint ==="\n          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -i "SHA-1" || true
           echo "Note: Debug signing fingerprints can change between GitHub-hosted runners."
       - uses: actions/upload-artifact@v4
         with:
