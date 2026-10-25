@@ -59,6 +59,21 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
     override fun onResume() { super.onResume(); render() }
+    @Deprecated("Google Sign-In activity result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == GoogleAuth.REQUEST_CODE) {
+            GoogleAuth.handleResult(data).onSuccess {
+                ReplyStore.set(this, "ai_auto", false)
+                Toast.makeText(this, "Google লগইন সফল", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                AlertDialog.Builder(this).setTitle("Google লগইন ব্যর্থ")
+                    .setMessage("Android OAuth SHA-1 এবং টেস্ট ইউজার যাচাই করুন।\\n" + (it.message ?: ""))
+                    .setPositiveButton("ঠিক আছে", null).show()
+            }
+            render()
+        }
+    }
     private fun render() {
         val root = vertical().apply {
             setBackgroundColor(bg)
@@ -106,6 +121,12 @@ class MainActivity : Activity() {
     }
     private fun home() {
         heading("🤖 AI Smart Reply", "স্মার্ট উত্তর, আপনার নিয়ন্ত্রণে")
+        val signedIn = GoogleAuth.account(this)
+        val accountCard = card()
+        accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
+        accountCard.addView(space(10))
+        accountCard.addView(action(if (signedIn == null) "Google দিয়ে লগইন করুন" else "অ্যাকাউন্ট পরিবর্তন করুন", { GoogleAuth.signIn(this) }, false))
+        addCard(accountCard)
         val banner = vertical().apply {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(blue, Color.rgb(33, 175, 249))).apply { cornerRadius = dp(20).toFloat() }
             setPadding(dp(20), dp(23), dp(20), dp(23))
@@ -206,8 +227,8 @@ class MainActivity : Activity() {
     }
     private fun generateAi(item: Incoming) {
         if (!AiEngine.configured(this)) {
-            AlertDialog.Builder(this).setTitle("AI সার্ভার সংযুক্ত নয়")
-                .setMessage("AI উত্তর তৈরি করতে আগে সেটিংস থেকে আপনার নিরাপদ HTTPS AI সার্ভার সংযুক্ত করতে হবে। কোনো মেসেজ এখনো AI-তে পাঠানো হয়নি।")
+            AlertDialog.Builder(this).setTitle("Google Login প্রয়োজন")
+                .setMessage("AI উত্তর তৈরি করতে প্রথমে Google দিয়ে লগইন করুন। কোনো মেসেজ এখনো AI-তে পাঠানো হয়নি।")
                 .setPositiveButton("সেটিংস") { _, _ -> page = "settings"; render() }
                 .setNegativeButton("বাতিল", null).show()
             return
@@ -316,8 +337,8 @@ class MainActivity : Activity() {
             if (checked) {
                 aiAuto.isChecked = false
                 if (!AiEngine.configured(this)) {
-                    AlertDialog.Builder(this).setTitle("AI Gateway সংযুক্ত করুন")
-                        .setMessage("প্রথমে নিজের নিরাপদ HTTPS AI Gateway URL এবং access token দিন। সরাসরি OpenAI/Gemini API Key অ্যাপে দেবেন না।")
+                    AlertDialog.Builder(this).setTitle("Google Login প্রয়োজন")
+                        .setMessage("প্রথমে Google অ্যাকাউন্ট দিয়ে লগইন করুন।")
                         .setPositiveButton("ঠিক আছে", null).show()
                 } else {
                     AlertDialog.Builder(this).setTitle("AI অটো রিপ্লাই চালু?")
@@ -332,58 +353,27 @@ class MainActivity : Activity() {
             } else ReplyStore.set(this, "ai_auto", false)
         }
         addCard(modes)
-        val provider = card()
-        provider.addView(label("✦ নিজের AI অ্যাকাউন্ট ব্যবহার করুন (BYOK)", 19f, dark, true))
-        provider.addView(space(8))
-        provider.addView(label("আপনার নিজস্ব Gemini বা OpenAI ক্রেডিট ব্যবহার করার পরিকল্পিত সুবিধা। নিরাপদ সার্ভার সংযোগ না হওয়া পর্যন্ত সরাসরি API Key এখানে সংরক্ষণ করা হবে না।", 13f, muted))
-        provider.addView(space(12))
-        val providerPrefs = getSharedPreferences("ai_config", MODE_PRIVATE)
-        val choice = Spinner(this)
-        val providers = listOf("Gemini (নিজের API)", "OpenAI (নিজের API)")
-        choice.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, providers)
-        choice.setSelection(if (providerPrefs.getString("provider", "gemini") == "openai") 1 else 0)
-        provider.addView(choice)
-        provider.addView(space(10))
-        provider.addView(action("AI Provider নির্বাচন সংরক্ষণ", {
-            providerPrefs.edit().putString("provider", if (choice.selectedItemPosition == 1) "openai" else "gemini").apply()
-            Toast.makeText(this, "Provider নির্বাচন সংরক্ষিত। API সংযোগ এখনো সক্রিয় নয়।", Toast.LENGTH_LONG).show()
-        }, false))
-        provider.addView(space(10))
-        provider.addView(label("নিরাপত্তা: অন্যের API Key অ্যাপে সরাসরি রাখবেন না। প্রত্যেক ব্যবহারকারীর আলাদা নিরাপদ সংযোগ, ব্যবহারের সীমা ও অনুমতি লাগবে।", 12f, muted))
-        addCard(provider)
-        val ai = card()
-        ai.addView(label("✦ AI Engine সংযোগ", 19f, dark, true))
-        ai.addView(space(8))
-        ai.addView(label(if (AiEngine.configured(this)) "HTTPS AI সার্ভার কনফিগার করা আছে" else "AI সার্ভার এখনো সংযুক্ত নয়", 14f, muted))
-        ai.addView(space(10))
-        ai.addView(action("AI সার্ভার কনফিগার করুন", {
-            val prefs = getSharedPreferences("ai_config", MODE_PRIVATE)
-            val layout = vertical().apply { setPadding(dp(20), dp(10), dp(20), 0) }
-            val url = EditText(this).apply {
-                hint = "https://your-domain.example/reply"
-                setSingleLine(true)
-                setText(prefs.getString("url", ""))
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            }
-            val token = EditText(this).apply {
-                hint = "Backend access token"
-                setSingleLine(true)
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            }
-            layout.addView(url); layout.addView(token)
-            AlertDialog.Builder(this).setTitle("নিজস্ব HTTPS AI সার্ভার").setView(layout)
-                .setMessage("এখানে OpenAI API Key দেবেন না। শুধু আপনার নিজস্ব backend URL ও access token ব্যবহার করুন।")
-                .setNegativeButton("বাতিল", null)
-                .setPositiveButton("সংরক্ষণ") { _, _ ->
-                    if (AiEngine.save(this, url.text.toString(), token.text.toString())) render()
-                    else Toast.makeText(this, "সঠিক HTTPS URL দিন", Toast.LENGTH_LONG).show()
-                }.show()
-        }, false))
-        addCard(ai)
+        val account = card()
+        account.addView(label("Google Login ও Gemini AI", 19f, dark, true))
+        account.addView(space(8))
+        val signedIn = GoogleAuth.account(this)
+        account.addView(label(if (signedIn == null) "লগইন করা নেই" else "সংযুক্ত: ${signedIn.email ?: "Google account"}", 14f, muted))
+        account.addView(space(10))
+        account.addView(action("Google দিয়ে লগইন / অ্যাকাউন্ট পরিবর্তন", { GoogleAuth.signIn(this) }, false))
+        if (signedIn != null) {
+            account.addView(space(8))
+            account.addView(action("Google থেকে লগআউট", {
+                ReplyStore.set(this, "ai_auto", false)
+                GoogleAuth.signOut(this) { render() }
+            }, false))
+        }
+        account.addView(space(8))
+        account.addView(label("AI উত্তর আপনার Cloudflare Worker-এর মাধ্যমে Gemini থেকে তৈরি হবে। কোনো API Key ফোনে রাখা হয় না।", 13f, muted))
+        addCard(account)
         val notice = card()
         notice.addView(label("গোপনীয়তা ও সীমাবদ্ধতা", 17f, dark, true))
         notice.addView(space(8))
-        notice.addView(label("সর্বশেষ ৫০টি শনাক্ত করা নোটিফিকেশনের লেখা ফোনে রাখা হয়। AI ব্যবহারের জন্য আলাদা HTTPS সার্ভার প্রয়োজন। আপনার অনুমতি ছাড়া মেসেজ AI-তে পাঠানো হয় না। সব অ্যাপে রিপ্লাই কাজ নাও করতে পারে।", 14f, muted))
+        notice.addView(label("সর্বশেষ ৫০টি শনাক্ত করা নোটিফিকেশনের লেখা ফোনে রাখা হয়। AI উত্তর চাইলে আপনার অনুমতির পর মেসেজ Cloudflare ও Gemini-তে পাঠানো হয়। সব অ্যাপে রিপ্লাই কাজ নাও করতে পারে।", 14f, muted))
         addCard(notice)
         column.addView(action("✓ সেটিংস সংরক্ষিত হয় স্বয়ংক্রিয়ভাবে", { Toast.makeText(this, "সেটিংস সংরক্ষিত আছে", Toast.LENGTH_SHORT).show() }))
     }
