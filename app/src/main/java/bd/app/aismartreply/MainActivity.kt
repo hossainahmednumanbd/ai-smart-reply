@@ -92,6 +92,7 @@ class MainActivity : Activity() {
         when (page) {
             "home" -> home()
             "chats" -> chats()
+            "conversation" -> conversation()
             "templates" -> templates()
             "settings" -> settingsPage()
         }
@@ -162,38 +163,46 @@ class MainActivity : Activity() {
         tile.addView(line); tile.setOnClickListener { click() }; addCard(tile)
     }
     private fun chats() {
-        heading("চ্যাট ইনবক্স", "নতুন নোটিফিকেশন ও সাজেস্টেড রিপ্লাই")
-        val items = ReplyStore.entries(this)
-        if (items.isEmpty()) {
+        heading("চ্যাট ইনবক্স", "ব্যক্তি অনুযায়ী কথোপকথন")
+        val entries = ReplyStore.entries(this)
+        val groups = entries.groupBy { it.app to it.sender }
+        if (groups.isEmpty()) {
             val tile = card()
-            tile.addView(label("💬  এখনো কোনো নতুন মেসেজ নেই", 18f, dark, true))
-            tile.addView(space(10))
-            tile.addView(label("Notification Access চালু করে WhatsApp বা Messenger-এ নতুন মেসেজ পেলে এখানে দেখা যাবে।", 14f, muted))
-            tile.addView(space(14))
+            tile.addView(label("এখনো কোনো নতুন মেসেজ নেই", 18f, dark, true))
             tile.addView(action("সেটিংস খুলুন", { page = "settings"; render() }))
             addCard(tile)
         }
-        items.take(30).forEach { item ->
+        groups.values.sortedByDescending { it.first().time }.forEach { messages ->
+            val item = messages.first()
             val tile = card()
-            tile.addView(label("${if (item.app == "WhatsApp") "🟢" else "🔵"}  ${item.sender}", 18f, dark, true))
+            tile.addView(label(item.sender, 18f, dark, true))
             tile.addView(label(item.app, 12f, muted))
-            tile.addView(space(12))
-            val bubble = label(item.message, 16f).apply {
-                background = shape(Color.rgb(240, 243, 248), 15)
-                setPadding(dp(13), dp(13), dp(13), dp(13))
-            }
-            tile.addView(bubble)
-            tile.addView(space(15))
-            tile.addView(label("✦ সাজেস্টেড রিপ্লাই", 15f, blue, true))
-            tile.addView(space(7))
-            tile.addView(label(ReplyStore.suggestion(item.message), 15f))
             tile.addView(space(8))
-            tile.addView(action("✦ AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
-            tile.addView(space(12))
-            tile.addView(action("উত্তর দেখুন ও পাঠান", { openReply(item) }))
+            tile.addView(label(item.message.take(90), 14f, muted))
+            tile.setOnClickListener { selected = item; page = "conversation"; render() }
             addCard(tile)
         }
-        column.addView(action("⟳  ইনবক্স রিফ্রেশ", { render() }, false))
+        column.addView(action("ইনবক্স রিফ্রেশ", { render() }, false))
+    }
+    private fun conversation() {
+        val person = selected ?: return
+        column.addView(action("‹ সব চ্যাট", { page = "chats"; render() }, false))
+        column.addView(space(12))
+        heading(person.sender, person.app)
+        ReplyStore.entries(this).filter { it.app == person.app && it.sender == person.sender }
+            .sortedBy { it.time }.forEach { item ->
+                val tile = card()
+                tile.addView(label(item.message, 16f))
+                tile.addView(space(12))
+                tile.addView(label("সাজেস্টেড রিপ্লাই", 14f, blue, true))
+                tile.addView(label(ReplyStore.suggestion(item.message), 15f))
+                tile.addView(space(10))
+                tile.addView(action("AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
+                tile.addView(space(8))
+                tile.addView(action("উত্তর দেখুন ও পাঠান", { openReply(item) }))
+                addCard(tile)
+            }
+        column.addView(label("শুধু নোটিফিকেশনে পাওয়া মেসেজ দেখানো হচ্ছে। একই নামের ভিন্ন ব্যক্তি মিশে যেতে পারে।", 12f, muted))
     }
     private fun generateAi(item: Incoming) {
         if (!AiEngine.configured(this)) {
