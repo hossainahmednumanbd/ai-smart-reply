@@ -73,7 +73,7 @@ class ReplyListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val app = packages[sbn.packageName] ?: return
-        if (!ReplyStore.enabled(this, if (sbn.packageName == "com.whatsapp.w4b") "allow_com.whatsapp" else "allow_${sbn.packageName}")) return
+        if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
         val n = sbn.notification
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val extras = n.extras ?: return
