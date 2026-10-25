@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
+import android.view.WindowInsets
 import android.view.View
 import android.widget.*
 
@@ -59,7 +60,18 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
     override fun onResume() { super.onResume(); render() }
     private fun render() {
-        val root = vertical().apply { setBackgroundColor(bg) }
+        val root = vertical().apply {
+            setBackgroundColor(bg)
+            if (Build.VERSION.SDK_INT >= 30) {
+                setOnApplyWindowInsetsListener { view, insets ->
+                    val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                    view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                    insets
+                }
+            } else {
+                fitsSystemWindows = true
+            }
+        }
         val scroll = ScrollView(this).apply { isFillViewport = false }
         column = vertical().apply { setPadding(dp(16), dp(18), dp(16), dp(20)) }
         scroll.addView(column)
@@ -165,7 +177,9 @@ class MainActivity : Activity() {
             tile.addView(space(15))
             tile.addView(label("✦ সাজেস্টেড রিপ্লাই", 15f, blue, true))
             tile.addView(space(7))
-            tile.addView(label(ReplyStore.suggestion(item.message), 15f))\n            tile.addView(space(8))\n            tile.addView(action("✦ AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
+            tile.addView(label(ReplyStore.suggestion(item.message), 15f))
+            tile.addView(space(8))
+            tile.addView(action("✦ AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
             tile.addView(space(12))
             tile.addView(action("উত্তর দেখুন ও পাঠান", { openReply(item) }))
             addCard(tile)
