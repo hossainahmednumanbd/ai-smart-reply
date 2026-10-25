@@ -71,6 +71,21 @@ class ReplyListener : NotificationListenerService() {
     override fun onListenerDisconnected() { instance = null; super.onListenerDisconnected() }
     override fun onDestroy() { instance = null; super.onDestroy() }
 
+    // Persist recent sends across listener restarts; notification keys change after replies.
+    private fun shouldAutoReply(app: String, sender: String, message: String): Boolean {
+        val prefs = getSharedPreferences("auto_dedup_v2", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val normalized = message.trim().replace(Regex("\\s+"), " ").lowercase()
+        val identity = "$app|${sender.trim().lowercase()}|$normalized"
+        val key = "msg_" + identity.hashCode().toString()
+        val last = prefs.getLong(key, 0L)
+        if (last > 0 && now - last in 0..600000L) return false
+        // Prevent notification feedback loops from our own template replies.
+        if (normalized == ReplyStore.suggestion(message).trim().lowercase()) return false
+        prefs.edit().putLong(key, now).apply()
+        return true
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val app = packages[sbn.packageName] ?: return
         if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
@@ -108,11 +123,7 @@ class ReplyListener : NotificationListenerService() {
                 }
             }
         } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
-            val prefs = getSharedPreferences("auto_dedup", Context.MODE_PRIVATE)
-            val dedupKey = "sent_" + sbn.key.hashCode()
-            val signature = sender + ":" + message
-            if (prefs.getString(dedupKey, null) != signature) {
-                prefs.edit().putString(dedupKey, signature).apply()
+            if (shouldAutoReply(app, sender, message)) {
                 send(this, sbn.key, ReplyStore.suggestion(message))
             }
         }
