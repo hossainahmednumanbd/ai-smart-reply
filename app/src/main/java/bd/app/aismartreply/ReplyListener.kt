@@ -85,14 +85,33 @@ class ReplyListener : NotificationListenerService() {
         if (message.contains("new messages", ignoreCase = true)) return
         val item = Incoming(sbn.key, app, sender, message, System.currentTimeMillis())
         ReplyStore.add(this, item)
-        // Automatic replies are opt-in per app, require a real RemoteInput action,
-        // and use only fixed local template responses. No AI or cloud upload.
-        if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
-            val dedupKey = "sent_${sbn.key.hashCode()}"
+        if (ReplyStore.enabled(this, "ai_auto") && AiEngine.configured(this) && actionFor(n) != null) {
+            val state = getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val day = now / 86400000L
+            val count = if (state.getLong("day", -1L) == day) state.getInt("count", 0) else 0
+            val signature = sbn.key + ":" + message
+            val sensitive = listOf("otp", "password", "pin", "bank", "payment", "বিকাশ", "নগদ", "টাকা", "পাসওয়ার্ড", "জরুরি", "অভিযোগ")
+            if (message.length in 2..500 && count < 20 &&
+                now - state.getLong("last_sent", 0L) > 60000L &&
+                state.getString("last_signature", "") != signature &&
+                sensitive.none { message.contains(it, true) }) {
+                state.edit().putLong("day", day).putInt("count", count + 1)
+                    .putString("last_signature", signature).apply()
+                AiEngine.generate(this, message) { result ->
+                    val reply = result.getOrNull() ?: return@generate
+                    if (ReplyStore.enabled(this, "ai_auto") && reply.length in 2..700 &&
+                        System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
+                        send(this, sbn.key, reply)) {
+                        state.edit().putLong("last_sent", System.currentTimeMillis()).apply()
+                    }
+                }
+            }
+        } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
             val prefs = getSharedPreferences("auto_dedup", Context.MODE_PRIVATE)
-            val signature = "$sender:$message"
+            val dedupKey = "sent_" + sbn.key.hashCode()
+            val signature = sender + ":" + message
             if (prefs.getString(dedupKey, null) != signature) {
-                // Save first to avoid a reply-notification loop.
                 prefs.edit().putString(dedupKey, signature).apply()
                 send(this, sbn.key, ReplyStore.suggestion(message))
             }
