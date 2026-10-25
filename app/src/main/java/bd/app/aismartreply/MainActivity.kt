@@ -165,16 +165,36 @@ class MainActivity : Activity() {
             tile.addView(space(15))
             tile.addView(label("✦ সাজেস্টেড রিপ্লাই", 15f, blue, true))
             tile.addView(space(7))
-            tile.addView(label(ReplyStore.suggestion(item.message), 15f))
+            tile.addView(label(ReplyStore.suggestion(item.message), 15f))\n            tile.addView(space(8))\n            tile.addView(action("✦ AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
             tile.addView(space(12))
             tile.addView(action("উত্তর দেখুন ও পাঠান", { openReply(item) }))
             addCard(tile)
         }
         column.addView(action("⟳  ইনবক্স রিফ্রেশ", { render() }, false))
     }
-    private fun openReply(item: Incoming) {
+    private fun generateAi(item: Incoming) {
+        if (!AiEngine.configured(this)) {
+            AlertDialog.Builder(this).setTitle("AI সার্ভার সংযুক্ত নয়")
+                .setMessage("AI উত্তর তৈরি করতে আগে সেটিংস থেকে আপনার নিরাপদ HTTPS AI সার্ভার সংযুক্ত করতে হবে। কোনো মেসেজ এখনো AI-তে পাঠানো হয়নি।")
+                .setPositiveButton("সেটিংস") { _, _ -> page = "settings"; render() }
+                .setNegativeButton("বাতিল", null).show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("AI-তে মেসেজ পাঠাবেন?")
+            .setMessage("এই মেসেজের লেখা আপনার কনফিগার করা AI সার্ভারে পাঠানো হবে। ব্যক্তিগত বা সংবেদনশীল তথ্য থাকলে পাঠাবেন না।")
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("AI উত্তর তৈরি") { _, _ ->
+                Toast.makeText(this, "AI উত্তর তৈরি হচ্ছে...", Toast.LENGTH_SHORT).show()
+                AiEngine.generate(this, item.message) { result ->
+                    result.onSuccess { reply -> openReply(item, reply) }
+                        .onFailure { error -> AlertDialog.Builder(this).setTitle("AI উত্তর পাওয়া যায়নি")
+                            .setMessage(error.message ?: "সার্ভার সংযোগ পরীক্ষা করুন").setPositiveButton("ঠিক আছে", null).show() }
+                }
+            }.show()
+    }
+    private fun openReply(item: Incoming, initialReply: String = ReplyStore.suggestion(item.message)) {
         val edit = EditText(this).apply {
-            setText(ReplyStore.suggestion(item.message))
+            setText(initialReply)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             setPadding(dp(18), dp(16), dp(18), dp(16))
         }
@@ -251,10 +271,39 @@ class MainActivity : Activity() {
         modes.addView(space(15))
         toggle(modes, "অটোমেটিক রিপ্লাই", "সমর্থিত নোটিফিকেশনে টেমপ্লেট উত্তর", "auto")
         addCard(modes)
+        val ai = card()
+        ai.addView(label("✦ AI Engine সংযোগ", 19f, dark, true))
+        ai.addView(space(8))
+        ai.addView(label(if (AiEngine.configured(this)) "HTTPS AI সার্ভার কনফিগার করা আছে" else "AI সার্ভার এখনো সংযুক্ত নয়", 14f, muted))
+        ai.addView(space(10))
+        ai.addView(action("AI সার্ভার কনফিগার করুন", {
+            val prefs = getSharedPreferences("ai_config", MODE_PRIVATE)
+            val layout = vertical().apply { setPadding(dp(20), dp(10), dp(20), 0) }
+            val url = EditText(this).apply {
+                hint = "https://your-domain.example/reply"
+                setSingleLine(true)
+                setText(prefs.getString("url", ""))
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            }
+            val token = EditText(this).apply {
+                hint = "Backend access token"
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            layout.addView(url); layout.addView(token)
+            AlertDialog.Builder(this).setTitle("নিজস্ব HTTPS AI সার্ভার").setView(layout)
+                .setMessage("এখানে OpenAI API Key দেবেন না। শুধু আপনার নিজস্ব backend URL ও access token ব্যবহার করুন।")
+                .setNegativeButton("বাতিল", null)
+                .setPositiveButton("সংরক্ষণ") { _, _ ->
+                    if (AiEngine.save(this, url.text.toString(), token.text.toString())) render()
+                    else Toast.makeText(this, "সঠিক HTTPS URL দিন", Toast.LENGTH_LONG).show()
+                }.show()
+        }, false))
+        addCard(ai)
         val notice = card()
         notice.addView(label("গোপনীয়তা ও সীমাবদ্ধতা", 17f, dark, true))
         notice.addView(space(8))
-        notice.addView(label("সর্বশেষ ৫০টি শনাক্ত করা নোটিফিকেশনের লেখা ফোনে রাখা হয়। এখনো AI বা সার্ভার সংযুক্ত নয়। সব অ্যাপে রিপ্লাই কাজ নাও করতে পারে।", 14f, muted))
+        notice.addView(label("সর্বশেষ ৫০টি শনাক্ত করা নোটিফিকেশনের লেখা ফোনে রাখা হয়। AI ব্যবহারের জন্য আলাদা HTTPS সার্ভার প্রয়োজন। আপনার অনুমতি ছাড়া মেসেজ AI-তে পাঠানো হয় না। সব অ্যাপে রিপ্লাই কাজ নাও করতে পারে।", 14f, muted))
         addCard(notice)
         column.addView(action("✓ সেটিংস সংরক্ষিত হয় স্বয়ংক্রিয়ভাবে", { Toast.makeText(this, "সেটিংস সংরক্ষিত আছে", Toast.LENGTH_SHORT).show() }))
     }
