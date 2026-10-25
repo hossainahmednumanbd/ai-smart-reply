@@ -83,7 +83,20 @@ export default {
           })
         });
       } finally { clearTimeout(timer); }
-      if (!response.ok) return json(502, { error: "AI provider request failed" });
+      if (!response.ok) {
+        // Expose a safe diagnostic category, never the API key or raw provider response.
+        let providerStatus = "";
+        try {
+          const detail = await response.json();
+          providerStatus = String(detail?.error?.status || "").slice(0, 60);
+        } catch {}
+        const category = response.status === 429 ? "Gemini quota exceeded"
+          : response.status === 403 || response.status === 401 ? "Gemini API key or access denied"
+          : response.status === 404 ? "Gemini model unavailable"
+          : response.status === 400 ? "Gemini request rejected"
+          : "Gemini provider error";
+        return json(502, { error: category + " (provider HTTP " + response.status + (providerStatus ? ", " + providerStatus : "") + ")" });
+      }
       const data = await response.json();
       const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
       if (!reply) return json(502, { error: "No AI reply generated" });
