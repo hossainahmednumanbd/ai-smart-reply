@@ -268,7 +268,8 @@ class MainActivity : Activity() {
         row.addView(toggle)
         tile.addView(row); tile.addView(space(12))
         toggle.setOnCheckedChangeListener { _, enabled ->
-            if (key == "auto" && enabled) {\n                ReplyStore.set(this, "ai_auto", false)
+            if (key == "auto" && enabled) {
+                ReplyStore.set(this, "ai_auto", false)
                 toggle.isChecked = false
                 AlertDialog.Builder(this).setTitle("অটো রিপ্লাই চালু করবেন?")
                     .setMessage("সমর্থিত নতুন নোটিফিকেশনে আপনার অনুমোদন ছাড়াই টেমপ্লেট উত্তর পাঠানো হতে পারে। এটি AI নয়। ভুল উত্তর যাওয়ার ঝুঁকি আছে।")
