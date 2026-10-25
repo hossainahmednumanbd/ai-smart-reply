@@ -124,7 +124,16 @@ class MainActivity : Activity() {
             tile.setOnClickListener { page = "settings"; render() }
             apps.addView(tile, LinearLayout.LayoutParams(0, dp(132), 1f).apply { marginEnd = dp(if (index == 2) 0 else 7) })
         }
-        column.addView(apps); column.addView(space(15))
+        column.addView(apps); column.addView(space(10))
+        val business = card()
+        val businessLine = horizontal()
+        businessLine.addView(label("🟢  WhatsApp Business", 16f, dark, true), LinearLayout.LayoutParams(0, -2, 1f))
+        businessLine.addView(label(if (ReplyStore.enabled(this, "allow_com.whatsapp.w4b")) "● চালু" else "○ বন্ধ", 13f,
+            if (ReplyStore.enabled(this, "allow_com.whatsapp.w4b")) Color.rgb(0,160,70) else muted))
+        business.addView(businessLine)
+        business.setOnClickListener { page = "settings"; render() }
+        addCard(business)
+        column.addView(space(5))
         menuCard("▣", "ম্যানুয়াল রিপ্লাই", "সাজেস্টেড উত্তর দেখে অনুমোদন দিন") { page = "chats"; render() }
         menuCard("ϟ", "অটো রিপ্লাই", "আপনার সেটিংস অনুযায়ী উত্তর পাঠান") { page = "settings"; render() }
         menuCard("⚙", "সেটিংস", "ডিভাইস, অ্যাপ ও রিপ্লাই নিয়ন্ত্রণ") { page = "settings"; render() }
@@ -274,7 +283,8 @@ class MainActivity : Activity() {
         platforms.addView(space(12))
         platforms.addView(label("Facebook ব্যক্তিগত অ্যাকাউন্টের সরাসরি API সংযোগ সমর্থিত নয়।", 13f, muted))
         platforms.addView(space(12))
-        toggle(platforms, "🟢 WhatsApp", "নোটিফিকেশন থেকে মেসেজ শনাক্ত", "allow_com.whatsapp")
+        toggle(platforms, "🟢 WhatsApp Personal", "ব্যক্তিগত WhatsApp নোটিফিকেশন", "allow_com.whatsapp")
+        toggle(platforms, "🟢 WhatsApp Business", "ব্যবসার গ্রাহকের নোটিফিকেশন", "allow_com.whatsapp.w4b")
         toggle(platforms, "🔵 Messenger", "নোটিফিকেশন থেকে মেসেজ শনাক্ত", "allow_com.facebook.orca")
         addCard(platforms)
         val modes = card()
