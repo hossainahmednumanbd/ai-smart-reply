@@ -24,7 +24,7 @@ object ReplyStore {
             (0 until array.length()).map { i ->
                 val o = array.getJSONObject(i)
                 Incoming(o.getString("key"), o.getString("app"), o.getString("sender"), o.getString("message"), o.getLong("time"))
-            }.reversed()
+            }
         } catch (_: Exception) { emptyList() }
     }
     @Synchronized fun add(ctx: Context, item: Incoming) {
@@ -88,7 +88,7 @@ class ReplyListener : NotificationListenerService() {
         if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
             val dedupKey = "sent_${sbn.key.hashCode()}"
             val prefs = getSharedPreferences("auto_dedup", Context.MODE_PRIVATE)
-            val signature = "${sbn.postTime}:$message"
+            val signature = "$sender:$message"
             if (prefs.getString(dedupKey, null) != signature) {
                 // Save first to avoid a reply-notification loop.
                 prefs.edit().putString(dedupKey, signature).apply()
