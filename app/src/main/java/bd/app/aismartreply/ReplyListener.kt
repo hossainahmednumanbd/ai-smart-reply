@@ -48,7 +48,7 @@ object ReplyStore {
 
 class ReplyListener : NotificationListenerService() {
     companion object {
-        private val packages = mapOf("com.whatsapp" to "WhatsApp", "com.facebook.orca" to "Messenger")
+        private val packages = mapOf("com.whatsapp" to "WhatsApp", "com.whatsapp.w4b" to "WhatsApp Business", "com.facebook.orca" to "Messenger")
         private fun actionFor(n: Notification): Notification.Action? =
             n.actions?.firstOrNull { action -> action.remoteInputs?.any { it.allowFreeFormInput } == true }
 
@@ -73,12 +73,14 @@ class ReplyListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val app = packages[sbn.packageName] ?: return
-        if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
+        if (!ReplyStore.enabled(this, if (sbn.packageName == "com.whatsapp.w4b") "allow_com.whatsapp" else "allow_${sbn.packageName}")) return
         val n = sbn.notification
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val extras = n.extras ?: return
         val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-        val message = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        val message = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
         if (sender.isEmpty() || message.isEmpty() || message.length > 2000) return
         if (message.contains("new messages", ignoreCase = true)) return
         val item = Incoming(sbn.key, app, sender, message, System.currentTimeMillis())
