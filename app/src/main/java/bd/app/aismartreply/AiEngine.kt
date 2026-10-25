@@ -40,8 +40,8 @@ object AiEngine {
                         val status = conn.responseCode
                         if (status != 200) {
                             val detail = conn.errorStream?.bufferedReader()?.use { it.readText().take(1000) }.orEmpty()
-                            val error = runCatching { JSONObject(detail).optString("error") }.getOrNull().orEmpty()
-                            error("AI সার্ভার HTTP $status: $error")
+                            val serverError = runCatching { JSONObject(detail).optString("error") }.getOrNull().orEmpty()
+                            throw IllegalStateException("AI সার্ভার HTTP $status: $serverError")
                         }
                         val raw = conn.inputStream.bufferedReader().use { it.readText().take(20000) }
                         val reply = JSONObject(raw).optString("reply").trim()
