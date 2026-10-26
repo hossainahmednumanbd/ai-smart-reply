@@ -29,4 +29,27 @@ class ListenerRecoveryTest {
         recovery.check(true, false, 1001) { calls++ }
         assertEquals(2, calls)
     }
+    @Test fun repeatedFailedRequestsEscalateToBindingResetButHealthyStateDoesNot() {
+        val recovery = ListenerRecovery(); val events = mutableListOf<String>()
+        for (time in listOf(0L, 30000L, 60000L)) {
+            recovery.check(true, false, time, restart = { events.add("reset") }) { events.add("bind") }
+        }
+        assertEquals(listOf("bind", "bind", "reset"), events)
+        recovery.check(true, true, 90000, restart = { events.add("reset") }) { events.add("bind") }
+        assertEquals(3, events.size)
+    }
+    @Test fun resetNeverLoopsAndRevokedAccessCancelsFurtherAttempts() {
+        val recovery = ListenerRecovery(); var resets = 0
+        for (time in 0L..290000L step 10000L) {
+            recovery.check(true, false, time, restart = { resets++ }) { }
+        }
+        assertEquals(1, resets)
+        recovery.check(false, false, 400000L, restart = { resets++ }) { fail("revoked") }
+        assertEquals(1, resets)
+    }
+    @Test fun oldAndroidWithoutResetSupportKeepsUsingPublicRebindOnly() {
+        val recovery = ListenerRecovery(); var binds = 0
+        for (time in listOf(0L, 30000L, 60000L, 90000L)) recovery.check(true, false, time) { binds++ }
+        assertEquals(4, binds)
+    }
 }

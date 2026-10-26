@@ -27,6 +27,16 @@ class MainActivity : Activity() {
     private var page = "home"
     private lateinit var column: LinearLayout
     private var selected: Incoming? = null
+    private var connectionLabel: TextView? = null
+    private var connectionDetails: TextView? = null
+    private val statusHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val statusRefresh = object : Runnable {
+        override fun run() {
+            connectionLabel?.text = if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা চলছে"
+            connectionDetails?.text = ReplyListener.connectionDetail(this@MainActivity)
+            statusHandler.postDelayed(this, 1500L)
+        }
+    }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun shape(color: Int, radius: Int = 18, stroke: Int? = null) = GradientDrawable().apply {
         setColor(color); cornerRadius = dp(radius).toFloat()
@@ -65,7 +75,9 @@ class MainActivity : Activity() {
         if (hasAccess()) ReplyListener.reconnect(this)
         AutoReplyService.sync(this)
         render()
+        statusHandler.removeCallbacks(statusRefresh); statusHandler.post(statusRefresh)
     }
+    override fun onPause() { statusHandler.removeCallbacks(statusRefresh); super.onPause() }
     @Deprecated("Google Sign-In activity result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -83,6 +95,7 @@ class MainActivity : Activity() {
         }
     }
     private fun render() {
+        connectionLabel = null; connectionDetails = null;
         val root = vertical().apply {
             setBackgroundColor(bg)
             if (Build.VERSION.SDK_INT >= 30) {
@@ -461,7 +474,10 @@ class MainActivity : Activity() {
                 }.show()
         }, false))
         permissions.addView(space(8))
-        permissions.addView(label(if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা প্রয়োজন", 14f))
+        connectionLabel = label(if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা চলছে", 14f)
+        permissions.addView(connectionLabel)
+        connectionDetails = label(ReplyListener.connectionDetail(this), 12f, muted)
+        permissions.addView(connectionDetails)
         permissions.addView(action("মেসেজ সংযোগ আবার চেষ্টা করুন", {
             ReplyListener.reconnect(this)
             AutoReplyService.sync(this)

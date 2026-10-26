@@ -78,3 +78,10 @@ Notification listener দিয়ে Page comment management চালু কর�
 অটো সেবা চালু থাকলে ৩০ সেকেন্ডের হালকা health check: সংযোগ ও অনুমতি পরীক্ষা; বিচ্ছিন্ন হলে সর্বোচ্চ ৩০ সেকেন্ডে একবার Android requestRebind। সুস্থ সংযোগকে বিচ্ছিন্ন করে না, permission নিজে বদলায় না, পুরোনো notification replay করে auto পাঠায় না। Stop-এ monitor বন্ধ। স্থায়ী wake lock, exact alarm, Accessibility বা battery exemption permission যোগ হয়নি। Android Doze-এ handler পিছোতে পারে; OS/app Force stop, reboot, OEM battery restrictions বা notification source না থাকলে সর্বক্ষণ কাজের নিশ্চয়তা নেই। ফোনের Unrestricted/No restrictions ও Background autostart ব্যবহারকারীকে যাচাই করতে হবে।
 
 বাস্তব ফোন পরীক্ষা: পুরোনো exact rules রক্ষা; নতুন group নিয়মে দীর্ঘ বাংলা/ইংরেজি প্রশ্ন; ভুল বিষয়/কম শব্দে না মেলা; reboot-এর পরে অ্যাপ খুলে service পুনরায় চালানো; screen off দীর্ঘসময় পরে বিভিন্ন ব্যক্তির নতুন notification; Stop/permission revoke-এর পরে পাঠানো বন্ধ; background disconnect-এ permission না টগল করে recovery। CI কৃত্রিম tests ফোনের দীর্ঘমেয়াদি validation-এর বিকল্প নয়।
+
+
+## 0.3.6: অনুমতি চালু অথচ সংযোগ বিচ্ছিন্ন
+
+0.3.5-এর requestRebind-only recovery বাস্তব ব্যবহারকারীর Android 16 ফোনে যথেষ্ট হয়নি। মূল কারণের system logs পাওয়া যায়নি, তাই এটি নিশ্চিত root-cause fix নয়। Android 14+ এ পরপর দুইটি অনুরোধের পরও disconnected থাকলে public requestUnbind(ComponentName) দিয়ে নিজের listener binding ছেড়ে এক সেকেন্ড পরে requestRebind করা হয়। Permission অন/অফ, component disable, hidden API, স্থায়ী wake lock কিছুই নয়। সর্বোচ্চ পাঁচ মিনিটে একবার binding reset, সুস্থ সংযোগে reset নয়; মাঝখানে permission প্রত্যাহার করলে delayed rebind বাতিল। Android 13 ও নিচে আগের requestRebind।
+
+Settings-এ সক্রিয়/বিচ্ছিন্ন ও সর্বশেষ অনুরোধের অবস্থা live বদলায়। ফোনের notification متن/নাম/token diagnostics-এ রাখা হয় না। সংযোগ পাওয়া callback না আসা পর্যন্ত success বলা হয় না। পূর্ববর্তী foreground service notification শুধু service চলার ইঙ্গিত, listener সংযুক্ত থাকার প্রমাণ নয়। Force stop/Doze/OEM restrictions আগের মতো প্রযোজ্য। স্ক্রিন বন্ধ অবস্থায় actual notifications ও Reply action থাকলে উত্তর দেওয়ার জন্য তৈরি, বাস্তব ফোনে দীর্ঘমেয়াদি validation বাকি।

@@ -65,27 +65,83 @@ class ReplyListener : NotificationListenerService() {
         }
         fun connected() = instance != null
         private val recovery = ListenerRecovery()
+        private val recoveryHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        private var pendingRebind: Runnable? = null
+        fun hasAccess(ctx: Context): Boolean {
+            val component = ComponentName(ctx, ReplyListener::class.java)
+            return if (android.os.Build.VERSION.SDK_INT >= 27)
+                (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                    .isNotificationListenerAccessGranted(component)
+            else android.provider.Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners")
+                ?.split(':')?.any { ComponentName.unflattenFromString(it) == component } == true
+        }
+        private fun diagnostic(ctx: Context, text: String) {
+            ctx.getSharedPreferences("listener_health", Context.MODE_PRIVATE).edit()
+                .putString("detail", text).putLong("time", System.currentTimeMillis()).apply()
+        }
+        fun connectionDetail(ctx: Context): String = ctx.getSharedPreferences("listener_health", Context.MODE_PRIVATE)
+            .getString("detail", "সংযোগের কোনো তথ্য এখনও পাওয়া যায়নি").orEmpty()
+        private fun requestBind(ctx: Context) {
+            if (!hasAccess(ctx) || connected()) return
+            try {
+                NotificationListenerService.requestRebind(ComponentName(ctx, ReplyListener::class.java))
+                diagnostic(ctx, "Android-কে সংযোগের অনুরোধ পাঠানো হয়েছে; সংযুক্ত হওয়ার অপেক্ষা")
+            } catch (error: Exception) {
+                diagnostic(ctx, "সংযোগের অনুরোধ ব্যর্থ: ${error.javaClass.simpleName}")
+            }
+        }
+        private fun restartBinding(ctx: Context) {
+            if (android.os.Build.VERSION.SDK_INT < 34 || !hasAccess(ctx) || connected()) return
+            val app = ctx.applicationContext
+            try {
+                // API 34 provides a public reset for our own listener even without a live instance.
+                NotificationListenerService.requestUnbind(ComponentName(app, ReplyListener::class.java))
+                diagnostic(app, "বারবার সংযোগ না হওয়ায় Android-এর আটকে থাকা binding নতুন করে যুক্ত করা হচ্ছে")
+                pendingRebind?.let { recoveryHandler.removeCallbacks(it) }
+                val retry = Runnable {
+                    pendingRebind = null
+                    if (hasAccess(app) && !connected()) requestBind(app)
+                }
+                pendingRebind = retry
+                recoveryHandler.postDelayed(retry, 1000L)
+            } catch (error: Exception) {
+                diagnostic(app, "সংযোগ পুনঃস্থাপন ব্যর্থ: ${error.javaClass.simpleName}")
+                requestBind(app)
+            }
+        }
         fun reconnect(ctx: Context) {
-            val access = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
+            val access = hasAccess(ctx)
             val current = instance
             val healthy = current != null && runCatching { current.activeNotifications != null }.getOrDefault(false)
             if (!healthy && instance === current) instance = null
-            recovery.check(access, healthy, android.os.SystemClock.elapsedRealtime()) {
-                try { NotificationListenerService.requestRebind(ComponentName(ctx, ReplyListener::class.java)) } catch (_: Exception) {}
+            if (!access) {
+                pendingRebind?.let { recoveryHandler.removeCallbacks(it) }; pendingRebind = null
+                diagnostic(ctx, "Notification Access বন্ধ; কোনো পুনঃসংযোগ করা হবে না")
+            }
+            recovery.check(access, healthy, android.os.SystemClock.elapsedRealtime(),
+                restart = if (android.os.Build.VERSION.SDK_INT >= 34) ({ restartBinding(ctx) }) else null) {
+                requestBind(ctx)
             }
         }
         @Volatile private var instance: ReplyListener? = null
     }
-    override fun onCreate() { super.onCreate(); AutoReplyGuard.installSafetyUpdate(this) }
-    override fun onListenerConnected() { super.onListenerConnected(); instance = this; recovery.reset() }
+    override fun onCreate() { super.onCreate(); AutoReplyGuard.installSafetyUpdate(this); diagnostic(this, "নোটিফিকেশন সেবা তৈরি হয়েছে; Android সংযোগের অপেক্ষা") }
+    override fun onListenerConnected() {
+        super.onListenerConnected(); instance = this; recovery.reset()
+        pendingRebind?.let { recoveryHandler.removeCallbacks(it) }; pendingRebind = null
+        diagnostic(this, "Android নোটিফিকেশন সংযোগ সফল")
+    }
     override fun onListenerDisconnected() {
         if (instance === this) instance = null
+        diagnostic(this, "Android মেসেজ সংযোগ বিচ্ছিন্ন করেছে")
         super.onListenerDisconnected()
         if (ReplyStore.enabled(this, "ai_auto") || ReplyStore.enabled(this, "auto")) reconnect(this)
     }
     override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        getSharedPreferences("listener_health", Context.MODE_PRIVATE).edit()
+            .putLong("last_event", System.currentTimeMillis()).apply()
         val app = packages[sbn.packageName] ?: return
         if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
         val n = sbn.notification
