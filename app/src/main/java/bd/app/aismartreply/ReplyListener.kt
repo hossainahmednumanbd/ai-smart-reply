@@ -71,7 +71,7 @@ class ReplyListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         instance = null
         super.onListenerDisconnected()
-        if (ReplyStore.enabled(this, "ai_auto")) reconnect(this)
+        if (ReplyStore.enabled(this, "ai_auto") || ReplyStore.enabled(this, "auto")) reconnect(this)
     }
     override fun onDestroy() { instance = null; super.onDestroy() }
 

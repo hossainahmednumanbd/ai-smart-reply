@@ -13,12 +13,15 @@ object AiEngine {
     private const val ENDPOINT = "https://wandering-waterfall-20ai-smart-reply-backend.hossainahmednumanbd.workers.dev/reply"
     private val pool = Executors.newFixedThreadPool(2)
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var generationEpoch = 0L
+    fun invalidatePending() { generationEpoch++ }
     fun configured(ctx: Context) = GoogleAuth.account(ctx) != null
     fun generate(ctx: Context, message: String, callback: (Result<String>) -> Unit) {
         if (!configured(ctx)) {
             main.post { callback(Result.failure(IllegalStateException("প্রথমে Google দিয়ে লগইন করুন"))) }
             return
         }
+        val requestedEpoch = generationEpoch
         val requestedAccount = GoogleAuth.account(ctx)?.id
         GoogleAuth.withIdToken(ctx) { tokenResult ->
             val token = tokenResult.getOrElse {
@@ -48,7 +51,7 @@ object AiEngine {
                         val raw = conn.inputStream.bufferedReader().use { it.readText().take(20000) }
                         val reply = JSONObject(raw).optString("reply").trim()
                         require(reply.isNotEmpty()) { "AI উত্তর পাওয়া যায়নি" }
-                        check(requestedAccount == GoogleAuth.account(ctx)?.id) { "অ্যাকাউন্ট পরিবর্তিত হয়েছে; আবার চেষ্টা করুন" }
+                        check(requestedEpoch == generationEpoch && requestedAccount == GoogleAuth.account(ctx)?.id) { "অ্যাকাউন্ট পরিবর্তিত হয়েছে; আবার চেষ্টা করুন" }
                         ctx.getSharedPreferences("ai_output", Context.MODE_PRIVATE).edit()
                             .putString("last_reply", reply.take(1200)).apply()
                         reply.take(1200)

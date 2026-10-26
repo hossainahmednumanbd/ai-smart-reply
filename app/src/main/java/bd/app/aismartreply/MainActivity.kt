@@ -390,6 +390,7 @@ class MainActivity : Activity() {
             }.show()
     }
     private fun eraseLocalData() {
+        AiEngine.invalidatePending()
         ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
         listOf("reply_settings", "reply_customization", "auto_dedup_v2", "ai_auto_state", "ai_output").forEach {
             getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
@@ -416,13 +417,17 @@ class MainActivity : Activity() {
                     .setMessage("সমর্থিত নতুন নোটিফিকেশনে আপনার অনুমোদন ছাড়াই টেমপ্লেট উত্তর পাঠানো হতে পারে। এটি AI নয়। ভুল উত্তর যাওয়ার ঝুঁকি আছে।")
                     .setNegativeButton("বাতিল", null)
                     .setPositiveButton("চালু করুন") { _, _ ->
+                        if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 8402)
                         ReplyStore.set(this, "ai_auto", false)
                         ReplyStore.set(this, key, true)
                         AutoReplyService.sync(this)
                         render()
                     }
                     .show()
-            } else ReplyStore.set(this, key, enabled)
+            } else {
+                ReplyStore.set(this, key, enabled)
+                if (key == "auto") AutoReplyService.sync(this)
+            }
         }
     }
     private fun settingsPage() {
@@ -463,7 +468,7 @@ class MainActivity : Activity() {
             isChecked = ReplyStore.enabled(this@MainActivity, "ai_auto")
         }
         modes.addView(aiAuto)
-        modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; দুই উত্তরের মাঝে অন্তত ৬০ সেকেন্ড। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
+        modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; AI দিয়ে তৈরি দুই উত্তরের মাঝে অন্তত ৬০ সেকেন্ড। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
         aiAuto.setOnCheckedChangeListener { _, checked ->
             if (checked && ReplyStore.enabled(this, "ai_auto")) return@setOnCheckedChangeListener
             if (checked) {
@@ -507,6 +512,7 @@ class MainActivity : Activity() {
             account.addView(space(8))
             account.addView(action("Google থেকে লগআউট", {
                 ReplyStore.set(this, "ai_auto", false)
+                AiEngine.invalidatePending()
                 AutoReplyService.sync(this)
                 GoogleAuth.signOut(this) { render() }
             }, false))

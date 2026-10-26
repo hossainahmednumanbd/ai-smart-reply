@@ -23,7 +23,7 @@ class AutoReplyService : Service() {
         // Called while the activity is visible, after opt-in or on resume.
         fun sync(ctx: Context) {
             val intent = Intent(ctx, AutoReplyService::class.java)
-            if (!ReplyStore.enabled(ctx, "ai_auto") || !AiEngine.configured(ctx)) {
+            if (!ReplyStore.enabled(ctx, "auto") && !(ReplyStore.enabled(ctx, "ai_auto") && AiEngine.configured(ctx))) {
                 ctx.stopService(intent)
                 return
             }
@@ -45,8 +45,8 @@ class AutoReplyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) ReplyStore.set(this, "ai_auto", false)
-        if (!ReplyStore.enabled(this, "ai_auto") || !AiEngine.configured(this)) {
+        if (intent?.action == STOP) { ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false) }
+        if (!ReplyStore.enabled(this, "auto") && !(ReplyStore.enabled(this, "ai_auto") && AiEngine.configured(this))) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -58,7 +58,7 @@ class AutoReplyService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("AI অটো রিপ্লাই চালু আছে")
+            .setContentTitle("অটো রিপ্লাই চালু আছে")
             .setContentText("নতুন মেসেজে স্বয়ংক্রিয় উত্তর সক্রিয়। সেটিংস খুলতে চাপুন।")
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,
