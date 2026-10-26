@@ -46,10 +46,13 @@ class ReplyListener : NotificationListenerService() {
         private fun actionFor(n: Notification): Notification.Action? =
             n.actions?.firstOrNull { action -> action.remoteInputs?.any { it.allowFreeFormInput } == true }
 
-        fun send(ctx: Context, key: String, reply: String): Boolean {
+        fun send(ctx: Context, key: String, reply: String, expectedFingerprint: String? = null): Boolean {
             val listener = instance ?: return false
             val sbn = try { listener.activeNotifications?.firstOrNull { it.key == key } } catch (_: Exception) { null } ?: return false
             val action = actionFor(sbn.notification) ?: return false
+            if (expectedFingerprint != null && NotificationMessageReader.read(sbn)?.fingerprint != expectedFingerprint) return false
+            // Mark before dispatch because the app can repost its notification synchronously.
+            val sentMarker = AutoReplyGuard.markSent(ctx, NotificationMessageReader.route(sbn), reply)
             return try {
                 val intent = Intent()
                 val results = Bundle()
@@ -57,7 +60,7 @@ class ReplyListener : NotificationListenerService() {
                 RemoteInput.addResultsToIntent(action.remoteInputs, intent, results)
                 action.actionIntent.send(ctx, 0, intent)
                 true
-            } catch (_: Exception) { false }
+            } catch (_: Exception) { AutoReplyGuard.forgetSent(ctx, sentMarker); false }
         }
         fun connected() = instance != null
         fun reconnect(ctx: Context) {
@@ -75,44 +78,23 @@ class ReplyListener : NotificationListenerService() {
     }
     override fun onDestroy() { instance = null; super.onDestroy() }
 
-    // Persist recent sends across listener restarts; notification keys change after replies.
-    private fun shouldAutoReply(app: String, sender: String, message: String): Boolean {
-        val prefs = getSharedPreferences("auto_dedup_v2", Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        val normalized = message.trim().replace(Regex("\\s+"), " ").lowercase()
-        val identity = "$app|${sender.trim().lowercase()}|$normalized"
-        val key = "msg_" + identity.hashCode().toString()
-        val last = prefs.getLong(key, 0L)
-        if (last > 0 && now - last in 0..600000L) return false
-        // Prevent notification feedback loops from our own template replies.
-        if (normalized == ReplyPreferences.suggestion(this, message).trim().lowercase()) return false
-        prefs.edit().putLong(key, now).apply()
-        return true
-    }
-
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val app = packages[sbn.packageName] ?: return
         if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
         val n = sbn.notification
-        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        if (n.category in listOf(Notification.CATEGORY_CALL, Notification.CATEGORY_SERVICE,
-                Notification.CATEGORY_TRANSPORT)) return
-        val extras = n.extras ?: return
-        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-        val message = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
-        if (sender.isEmpty() || message.isEmpty() || message.length > 2000) return
-        if (message.contains("new messages", ignoreCase = true)) return
-        val item = Incoming(sbn.key, app, sender, message, System.currentTimeMillis())
+        val incoming = NotificationMessageReader.read(sbn) ?: return
+        if (AutoReplyGuard.isSentEcho(this, incoming)) return
+        val sender = incoming.sender
+        val message = incoming.text
+        val item = Incoming(sbn.key, app, sender, message, if (incoming.timestamp > 0) incoming.timestamp else System.currentTimeMillis())
         ReplyStore.add(this, item)
         if (ReplyStore.enabled(this, "ai_auto") && AiEngine.configured(this) && actionFor(n) != null) {
             val fixed = ReplyPreferences.matched(this, message)
             if (fixed != null) {
-                if (shouldAutoReply(app, sender, message) && send(this, sbn.key, fixed)) {
-                    getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit()
-                        .putString("status", "নিজের নিয়ম অনুযায়ী উত্তর পাঠানোর অনুরোধ সফল").apply()
-                }
+                if (!AutoReplyGuard.claim(this, incoming)) return
+                val sent = send(this, sbn.key, fixed, incoming.fingerprint)
+                getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit()
+                    .putString("status", if (sent) "নিজের নিয়ম অনুযায়ী উত্তর পাঠানোর অনুরোধ সফল" else "নিয়ম মিলেছে; সক্রিয় মেসেজ বদলে যাওয়ায় বা Reply action ব্যর্থ হওয়ায় পাঠানো হয়নি").apply()
                 return
             }
             val state = getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE)
@@ -123,8 +105,8 @@ class ReplyListener : NotificationListenerService() {
             val sensitive = listOf("otp", "password", "pin", "bank", "payment", "বিকাশ", "নগদ", "টাকা", "পাসওয়ার্ড", "জরুরি", "অভিযোগ")
             if (message.length in 2..500 && count < 20 &&
                 now - state.getLong("last_sent", 0L) > 60000L &&
-                state.getString("last_signature", "") != signature &&
                 sensitive.none { message.contains(it, true) }) {
+                if (!AutoReplyGuard.claim(this, incoming)) return
                 state.edit().putLong("day", day).putInt("count", count + 1)
                     .putString("last_signature", signature).apply()
                 state.edit().putString("status", "AI উত্তর তৈরি হচ্ছে").apply()
@@ -141,7 +123,7 @@ class ReplyListener : NotificationListenerService() {
                         } else if (ReplyStore.enabled(this, "ai_auto") &&
                             generationAccount == GoogleAuth.account(this)?.id && reply.length in 2..700 &&
                             System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
-                            send(this, sbn.key, reply)) {
+                            send(this, sbn.key, reply, incoming.fingerprint)) {
                             state.edit().putLong("last_sent", System.currentTimeMillis())
                                 .putString("status", "অটো রিপ্লাই পাঠানোর অনুরোধ সফল").apply()
                         } else {
@@ -152,8 +134,8 @@ class ReplyListener : NotificationListenerService() {
             }
         } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
             val response = ReplyPreferences.templateReply(this, message)
-            if (response != null && shouldAutoReply(app, sender, message)) {
-                send(this, sbn.key, response)
+            if (response != null && AutoReplyGuard.claim(this, incoming)) {
+                send(this, sbn.key, response, incoming.fingerprint)
             }
         }
     }

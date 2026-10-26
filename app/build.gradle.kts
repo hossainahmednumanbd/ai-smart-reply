@@ -2,7 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "bd.app.aismartreply"
     compileSdk = 36
-    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 36; versionCode = 5; versionName = "0.3.1" }
+    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 36; versionCode = 6; versionName = "0.3.2" }
     val permanentStore = System.getenv("ANDROID_KEYSTORE_PATH")
     if (!permanentStore.isNullOrBlank()) {
         signingConfigs {
@@ -18,7 +18,8 @@ android {
             getByName("release") { signingConfig = signingConfigs.getByName("permanentRelease") }
         }
     }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
-dependencies { testImplementation("junit:junit:4.13.2"); implementation("com.google.android.gms:play-services-auth:21.4.0") }
+dependencies { testImplementation("junit:junit:4.13.2"); testImplementation("org.robolectric:robolectric:4.16.1"); implementation("com.google.android.gms:play-services-auth:21.4.0") }

@@ -60,3 +60,5 @@ Notification listener দিয়ে Page comment management চালু কর�
 কোনো app কখনো সরানো হবে না এমন নিশ্চয়তা দেওয়া সম্ভব নয়। সঠিক implementation, বাস্তব support, শর্তমাফিক data processing, testing এবং reviewer feedback অনুযায়ী সংশোধন চালিয়ে যেতে হবে।
 
 0.3.1: সাধারণ টেমপ্লেটের আলাদা অন/অফ সুইচ, ডিফল্ট বন্ধ। নিজের keyword rule ও AI mode চালু রাখার জন্য এই সাধারণ উত্তর চালু করার প্রয়োজন নেই। 0.3.0-এর ওপর সরাসরি update করুন।
+
+0.3.2: প্রতিটি notification-এর সম্পূর্ণ history নয়, সর্বশেষ incoming message দিয়ে rule মেলে। নিজের outgoing reply ও RemoteInput history বাদ যায়। একই message event-এ auto reply একবারই চালু হয়; পরবর্তী সত্যিকারের নতুন message আলাদা। সাধারণ উত্তর এখনও কেবল template mode-এ কোনো rule না মিললে এবং তার নিজস্ব সুইচ চালু থাকলে প্রযোজ্য।

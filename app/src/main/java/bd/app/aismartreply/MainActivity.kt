@@ -402,7 +402,7 @@ class MainActivity : Activity() {
     private fun eraseLocalData() {
         AiEngine.invalidatePending()
         ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
-        listOf("reply_settings", "reply_customization", "auto_dedup_v2", "ai_auto_state", "ai_output").forEach {
+        listOf("reply_settings", "reply_customization", "auto_dedup_v2", "auto_reply_guard_v1", "ai_auto_state", "ai_output").forEach {
             getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
         }
         GoogleAuth.client(this).revokeAccess().addOnCompleteListener {

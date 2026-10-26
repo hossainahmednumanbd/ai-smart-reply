@@ -27,6 +27,12 @@ jobs:
           gradle-version: '8.11.1'
       - name: Compile Android code
         run: gradle :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-test-results
+          path: app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: ignore
       - name: Test gateway
         run: node --test cloudflare-worker/tests/*.test.mjs
       - name: Build APK with permanent signing key
