@@ -22,4 +22,4 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
-dependencies { testImplementation("junit:junit:4.13.2"); testImplementation("org.robolectric:robolectric:4.16.1"); implementation("com.google.android.gms:play-services-auth:21.4.0") }
+dependencies { implementation("androidx.core:core:1.16.0"); testImplementation("junit:junit:4.13.2"); testImplementation("org.robolectric:robolectric:4.16.1"); implementation("com.google.android.gms:play-services-auth:21.4.0") }

@@ -3,7 +3,7 @@ package bd.app.aismartreply
 import android.app.Notification
 import android.app.Person
 import android.content.Context
-import android.os.UserHandle
+import android.os.Process
 import android.service.notification.StatusBarNotification
 import org.junit.Assert.*
 import org.junit.Before
@@ -26,7 +26,7 @@ class NotificationReplyFlowTest {
         }
     }
     private fun sbn(n: Notification, id: Int = 7) = StatusBarNotification(
-        "com.whatsapp", "com.whatsapp", id, null, 1000, 0, n, UserHandle.of(0), 5000L)
+        "com.whatsapp", "com.whatsapp", id, null, 1000, 0, n, Process.myUserHandle(), 5000L)
     private fun styled(vararg messages: Notification.MessagingStyle.Message, id: Int = 7): StatusBarNotification {
         val style = Notification.MessagingStyle(owner)
         messages.forEach { style.addMessage(it) }

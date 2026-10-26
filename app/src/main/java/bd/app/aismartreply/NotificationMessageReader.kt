@@ -2,7 +2,7 @@ package bd.app.aismartreply
 
 import android.app.Notification
 import android.content.Context
-import android.os.Build
+import androidx.core.app.NotificationCompat
 import android.service.notification.StatusBarNotification
 import java.security.MessageDigest
 
@@ -16,7 +16,7 @@ private fun digest(value: String) = MessageDigest.getInstance("SHA-256")
 
 object NotificationMessageReader {
     fun route(sbn: StatusBarNotification): String =
-        "${sbn.packageName}|${sbn.user.identifier}|${sbn.notification.shortcutId ?: "${sbn.id}:${sbn.tag.orEmpty()}"}"
+        "${sbn.packageName}|${sbn.user}|${sbn.notification.shortcutId ?: "${sbn.id}:${sbn.tag.orEmpty()}"}"
 
     @Suppress("DEPRECATION")
     fun read(sbn: StatusBarNotification): NotificationMessage? {
@@ -24,14 +24,14 @@ object NotificationMessageReader {
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
             n.category in listOf(Notification.CATEGORY_CALL, Notification.CATEGORY_SERVICE, Notification.CATEGORY_TRANSPORT)) return null
         val extras = n.extras ?: return null
-        val style = Notification.MessagingStyle.extractMessagingStyleFromNotification(n)
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
         if (style != null) {
             // Do not search backward for an old incoming message after an outgoing reply.
             val latest = style.messages.lastOrNull() ?: return null
-            val author = if (Build.VERSION.SDK_INT >= 28) latest.senderPerson?.name?.toString() else latest.sender?.toString()
+            val author = latest.person?.name?.toString() ?: latest.sender?.toString()
             if (author.isNullOrBlank()) return null
-            if (Build.VERSION.SDK_INT >= 28) {
-                val authorPerson = latest.senderPerson
+            run {
+                val authorPerson = latest.person
                 val user = style.user
                 if ((!authorPerson?.key.isNullOrBlank() && authorPerson?.key == user.key) ||
                     (!authorPerson?.uri.isNullOrBlank() && authorPerson?.uri == user.uri)) return null
