@@ -111,26 +111,22 @@ object AutoReplyGuard {
         val p = prefs(ctx)
         val chatKey = "chat_" + digest(route)
         val replyKey = "reply_" + digest(route + "|" + clean(reply))
-        val lastChat = p.getLong(chatKey, 0L)
         val lastReply = p.getLong(replyKey, 0L)
         if (lastReply > 0 && now - lastReply in 0 until ECHO_TTL) {
             status(ctx, "একই অটো উত্তর ১০ মিনিটে পুনরাবৃত্তি হওয়ায় পাঠানো হয়নি"); return false
         }
-        if (lastChat > 0 && now - lastChat in 0 until CHAT_PAUSE) {
-            status(ctx, "এই চ্যাটে এক মিনিটের অটো রিপ্লাই বিরতি চলছে"); return false
-        }
-        val start = p.getLong("control_burst_start", 0L)
-        val count = if (start > 0 && now - start in 0 until 60000L) p.getLong("control_burst_count", 0L) else 0L
-        if (count >= 5L) {
-            ctx.getSharedPreferences("reply_settings", Context.MODE_PRIVATE).edit()
-                .putBoolean("auto", false).putBoolean("ai_auto", false).commit()
-            status(ctx, "দ্রুত পুনরাবৃত্তি ধরা পড়ায় সুরক্ষার জন্য সব অটো রিপ্লাই বন্ধ হয়েছে")
-            AutoReplyService.sync(ctx)
+        // A burst belongs to one conversation. Other conversations never share its pause.
+        val startKey = chatKey + "_burst_start"
+        val countKey = chatKey + "_burst_count"
+        val start = p.getLong(startKey, 0L)
+        val count = if (start > 0 && now - start in 0 until CHAT_PAUSE) p.getLong(countKey, 0L) else 0L
+        if (count >= 3L) {
+            status(ctx, "এই চ্যাটে তিনটি উত্তরের পর সাময়িক বিরতি চলছে; অন্য চ্যাট চালু আছে")
             return false
         }
         p.edit().putLong(chatKey, now).putLong(replyKey, now)
-            .putLong("control_burst_start", if (count == 0L) now else start)
-            .putLong("control_burst_count", count + 1L).commit()
+            .putLong(startKey, if (count == 0L) now else start)
+            .putLong(countKey, count + 1L).commit()
         return true
     }
     @Synchronized fun markSent(ctx: Context, route: String, reply: String, now: Long = System.currentTimeMillis()): String {
@@ -148,6 +144,7 @@ object AutoReplyGuard {
         val p = prefs(ctx); val edit = p.edit()
         p.all.entries.filterNot { it.key.startsWith("control_") }
             .sortedByDescending { (it.value as? Long) ?: 0L }.forEachIndexed { i, entry ->
+                if (entry.key.endsWith("_burst_count")) return@forEachIndexed
                 val time = (entry.value as? Long) ?: 0L
                 val ttl = if (entry.key.startsWith("event_")) 86400000L else ECHO_TTL
                 if (i >= 499 || now - time >= ttl || time > now) edit.remove(entry.key)

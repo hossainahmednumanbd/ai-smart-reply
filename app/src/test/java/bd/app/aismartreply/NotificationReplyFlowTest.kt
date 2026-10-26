@@ -121,20 +121,36 @@ class NotificationReplyFlowTest {
         val disguised = message.copy(text = "\u2068You:\u2069 জি   ভাই বলেন", route = "com.whatsapp.w4b|other|changed", timestamp = 2000)
         assertTrue(AutoReplyGuard.isSentEcho(ctx, disguised, 10001))
     }
-    @Test fun everyAutoModeSharesConversationPauseAndReplyRepeatLimit() {
-        ReplyStore.set(ctx, "auto", true)
-        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 10000))
-        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "দ্বিতীয় উত্তর", 10001))
-        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 80000))
-        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "দ্বিতীয় উত্তর", 80000))
-        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 610001))
+    @Test fun threeRepliesInOneChatPauseOnlyThatChatThenResume() {
+        ReplyStore.set(ctx, "ai_auto", true)
+        for (i in 1..3) assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "answer-$i", 10000L + i))
+        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "fourth", 10004))
+        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-two", "another answer", 10004))
+        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "fourth", 70002))
+        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "answer-1", 70003))
+        assertTrue(ReplyStore.enabled(ctx, "ai_auto"))
     }
-    @Test fun burstBreakerDisablesBothAutomaticModesBeforeSixthSend() {
-        ReplyStore.set(ctx, "auto", true); ReplyStore.set(ctx, "ai_auto", true)
-        for (i in 1..5) assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-$i", "reply-$i", 10000L + i))
-        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-six", "reply-six", 10006))
-        assertFalse(ReplyStore.enabled(ctx, "auto")); assertFalse(ReplyStore.enabled(ctx, "ai_auto"))
-        assertTrue(ctx.getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).getString("status", "")!!.contains("বন্ধ"))
+    @Test fun tenDifferentPeopleCanReceiveTheirOwnAnswersAtTheSameTime() {
+        ReplyStore.set(ctx, "ai_auto", true)
+        val replies = mutableMapOf<String, String>()
+        for (i in 1..10) {
+            val message = NotificationMessage("person-$i", "question-$i", 1000L, "com.whatsapp|user|chat-$i", true)
+            assertFalse(AutoReplyGuard.isSentEcho(ctx, message, 10000))
+            assertTrue(AutoReplyGuard.claim(ctx, message, 10000))
+            val reply = "answer to question-$i"
+            assertTrue(AutoReplyGuard.reserveAutoSend(ctx, message.route, reply, 10000))
+            AutoReplyGuard.markSent(ctx, message.route, reply, 10000)
+            replies[message.sender] = reply
+        }
+        assertEquals(10, replies.size)
+        for (i in 1..10) assertEquals("answer to question-$i", replies["person-$i"])
+        assertTrue(ReplyStore.enabled(ctx, "ai_auto"))
+    }
+    @Test fun sameIncomingTextFromDifferentPeopleIsNotADuplicate() {
+        val first = NotificationMessage("Alice", "hello", 1000L, "com.whatsapp|user|alice", true)
+        assertTrue(AutoReplyGuard.claim(ctx, first, 10000))
+        assertTrue(AutoReplyGuard.claim(ctx, first.copy(sender = "Bob", route = "com.whatsapp|user|bob"), 10000))
+        assertFalse(AutoReplyGuard.claim(ctx, first.copy(timestamp = 2000L), 10001))
     }
     @Test fun safetyUpdateStopsAutoOnceAndPreservesCustomRules() {
         val rules = listOf(ReplyRule("mine", "Vaiya", "জি ভাই বলেন", true))

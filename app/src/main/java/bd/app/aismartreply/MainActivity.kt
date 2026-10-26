@@ -478,7 +478,7 @@ class MainActivity : Activity() {
             isChecked = ReplyStore.enabled(this@MainActivity, "ai_auto")
         }
         modes.addView(aiAuto)
-        modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; AI দিয়ে তৈরি দুই উত্তরের মাঝে অন্তত ৬০ সেকেন্ড। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
+        modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; প্রত্যেক চ্যাটে এক মিনিটে সর্বোচ্চ তিনটি উত্তর; আলাদা ব্যক্তির জন্য আলাদা উত্তর। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
         aiAuto.setOnCheckedChangeListener { _, checked ->
             if (checked && ReplyStore.enabled(this, "ai_auto")) return@setOnCheckedChangeListener
             if (checked) {
@@ -505,7 +505,7 @@ class MainActivity : Activity() {
             }
         }
         modes.addView(space(10))
-        modes.addView(label("লুপ সুরক্ষা: এই অ্যাপের পাঠানো লেখায় ১০ মিনিট অটো উত্তর নয়, একই লেখা ১০ মিনিটে একবার, একই চ্যাটে এক মিনিট বিরতি। এক মিনিটে ৫টি অটো পাঠানোর চেষ্টার পর পরের চেষ্টায় অটো নিজে বন্ধ হবে। অন্য অ্যাকাউন্ট থেকে একই লেখা ফিরলেও বাদ যাবে।", 12f, muted))
+        modes.addView(label("লুপ সুরক্ষা: এই অ্যাপের পাঠানো লেখায় ১০ মিনিট অটো উত্তর নয়, একই লেখা ১০ মিনিটে একবার, একই চ্যাটে এক মিনিটে সর্বোচ্চ তিনটি অটো উত্তর। অন্য ব্যক্তির চ্যাটে এই বিরতি প্রযোজ্য নয়। অন্য অ্যাকাউন্ট থেকে একই লেখা ফিরলেও বাদ যাবে।", 12f, muted))
         modes.addView(label(if (AutoReplyService.running) "✓ ব্যাকগ্রাউন্ড সেবা চালু" else "ব্যাকগ্রাউন্ড সেবা বন্ধ", 13f, muted))
         modes.addView(label(if (ReplyListener.connected()) "✓ মেসেজ নোটিফিকেশন সংযুক্ত" else "মেসেজ নোটিফিকেশন সংযোগ অপেক্ষায়", 13f, muted))
         val lastState = getSharedPreferences("ai_auto_state", MODE_PRIVATE).getString("status", "").orEmpty()

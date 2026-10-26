@@ -106,7 +106,6 @@ class ReplyListener : NotificationListenerService() {
             val signature = sbn.key + ":" + message
             val sensitive = listOf("otp", "password", "pin", "bank", "payment", "বিকাশ", "নগদ", "টাকা", "পাসওয়ার্ড", "জরুরি", "অভিযোগ")
             if (message.length in 2..500 && count < 20 &&
-                now - state.getLong("last_sent", 0L) > 60000L &&
                 sensitive.none { message.contains(it, true) }) {
                 if (!AutoReplyGuard.claim(this, incoming)) return
                 state.edit().putLong("day", day).putInt("count", count + 1)
@@ -121,10 +120,16 @@ class ReplyListener : NotificationListenerService() {
                         val reply = result.getOrNull()
                         if (reply == null) {
                             // Store only the error category, never message text or login tokens.
-                            state.edit().putString("status", "AI অনুরোধ ব্যর্থ; ম্যানুয়াল AI পরীক্ষা করুন").apply()
+                            val error = result.exceptionOrNull()
+                            val category = when {
+                                error?.message?.contains("Google") == true -> "Google লগইন নবায়ন করুন"
+                                error is java.net.SocketTimeoutException -> "সংযোগের সময় শেষ হয়েছে"
+                                error is java.io.IOException -> "ইন্টারনেট সংযোগ পরীক্ষা করুন"
+                                else -> Regex("HTTP \\d{3}").find(error?.message.orEmpty())?.value ?: "উত্তর তৈরি হয়নি"
+                            }
+                            state.edit().putString("status", "AI অনুরোধ ব্যর্থ: $category; ম্যানুয়াল AI পরীক্ষা করুন").apply()
                         } else if (ReplyStore.enabled(this, "ai_auto") &&
                             generationAccount == GoogleAuth.account(this)?.id && reply.length in 2..700 &&
-                            System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
                             send(this, sbn.key, reply, incoming.fingerprint)) {
                             state.edit().putLong("last_sent", System.currentTimeMillis())
                                 .putString("status", "অটো রিপ্লাই পাঠানোর অনুরোধ সফল").apply()

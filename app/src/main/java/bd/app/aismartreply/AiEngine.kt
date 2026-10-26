@@ -11,7 +11,7 @@ import java.util.concurrent.Executors
 /** Cloudflare gateway authenticates each request with a Google ID token. */
 object AiEngine {
     private const val ENDPOINT = "https://wandering-waterfall-20ai-smart-reply-backend.hossainahmednumanbd.workers.dev/reply"
-    private val pool = Executors.newFixedThreadPool(2)
+    private val pool = Executors.newFixedThreadPool(10)
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var generationEpoch = 0L
     fun invalidatePending() { generationEpoch++ }
