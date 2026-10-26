@@ -37,15 +37,7 @@ object ReplyStore {
         }
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString(INBOX, array.toString()).apply()
     }
-    fun suggestion(text: String): String {
-        val msg = text.lowercase()
-        return when {
-            listOf("কেমন আছ", "how are you", "kmn acho").any { msg.contains(it) } -> "আলহামদুলিল্লাহ, ভালো আছি। আপনি কেমন আছেন?"
-            listOf("ধন্যবাদ", "thanks", "thank you").any { msg.contains(it) } -> "আপনাকেও ধন্যবাদ!"
-            listOf("hello", "hi", "হ্যালো", "সালাম", "assalamu").any { msg.contains(it) } -> "আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি?"
-            else -> "আপনার মেসেজ পেয়েছি। একটু পরে বিস্তারিত জানাচ্ছি।"
-        }
-    }
+
 }
 
 class ReplyListener : NotificationListenerService() {
@@ -93,7 +85,7 @@ class ReplyListener : NotificationListenerService() {
         val last = prefs.getLong(key, 0L)
         if (last > 0 && now - last in 0..600000L) return false
         // Prevent notification feedback loops from our own template replies.
-        if (normalized == ReplyStore.suggestion(message).trim().lowercase()) return false
+        if (normalized == ReplyPreferences.suggestion(this, message).trim().lowercase()) return false
         prefs.edit().putLong(key, now).apply()
         return true
     }
@@ -115,6 +107,14 @@ class ReplyListener : NotificationListenerService() {
         val item = Incoming(sbn.key, app, sender, message, System.currentTimeMillis())
         ReplyStore.add(this, item)
         if (ReplyStore.enabled(this, "ai_auto") && AiEngine.configured(this) && actionFor(n) != null) {
+            val fixed = ReplyPreferences.matched(this, message)
+            if (fixed != null) {
+                if (shouldAutoReply(app, sender, message) && send(this, sbn.key, fixed)) {
+                    getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit()
+                        .putString("status", "নিজের নিয়ম অনুযায়ী উত্তর পাঠানোর অনুরোধ সফল").apply()
+                }
+                return
+            }
             val state = getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE)
             val now = System.currentTimeMillis()
             val day = now / 86400000L
@@ -131,13 +131,15 @@ class ReplyListener : NotificationListenerService() {
                 val wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
                     .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:auto-reply")
                     .apply { acquire(35000L) }
+                val generationAccount = GoogleAuth.account(this)?.id
                 AiEngine.generate(this, message) { result ->
                     try {
                         val reply = result.getOrNull()
                         if (reply == null) {
                             // Store only the error category, never message text or login tokens.
                             state.edit().putString("status", "AI অনুরোধ ব্যর্থ; ম্যানুয়াল AI পরীক্ষা করুন").apply()
-                        } else if (ReplyStore.enabled(this, "ai_auto") && reply.length in 2..700 &&
+                        } else if (ReplyStore.enabled(this, "ai_auto") &&
+                            generationAccount == GoogleAuth.account(this)?.id && reply.length in 2..700 &&
                             System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
                             send(this, sbn.key, reply)) {
                             state.edit().putLong("last_sent", System.currentTimeMillis())
@@ -150,7 +152,7 @@ class ReplyListener : NotificationListenerService() {
             }
         } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
             if (shouldAutoReply(app, sender, message)) {
-                send(this, sbn.key, ReplyStore.suggestion(message))
+                send(this, sbn.key, ReplyPreferences.suggestion(this, message))
             }
         }
     }

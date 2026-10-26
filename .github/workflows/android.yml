@@ -21,12 +21,14 @@ jobs:
         run: |
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.11.1'
       - name: Compile Android code
-        run: gradle :app:compileDebugKotlin --no-daemon
+        run: gradle :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - name: Test gateway
+        run: node --test cloudflare-worker/tests/*.test.mjs
       - name: Build APK with permanent signing key
         env:
           ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
@@ -38,4 +40,9 @@ jobs:
         with:
           name: ai-smart-reply-signed-apk
           path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-smart-reply-play-bundle
+          path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error

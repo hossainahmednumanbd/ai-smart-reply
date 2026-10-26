@@ -19,6 +19,7 @@ object AiEngine {
             main.post { callback(Result.failure(IllegalStateException("প্রথমে Google দিয়ে লগইন করুন"))) }
             return
         }
+        val requestedAccount = GoogleAuth.account(ctx)?.id
         GoogleAuth.withIdToken(ctx) { tokenResult ->
             val token = tokenResult.getOrElse {
                 callback(Result.failure(IllegalStateException("Google লগইন মেয়াদ শেষ। আবার লগইন করুন।")))
@@ -35,7 +36,8 @@ object AiEngine {
                         conn.instanceFollowRedirects = false
                         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                         conn.setRequestProperty("Authorization", "Bearer $token")
-                        val body = JSONObject().put("message", message.take(2000)).toString()
+                        val body = JSONObject().put("message", message.take(2000))
+                            .put("profile", ReplyPreferences.profile(ctx)).toString()
                         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                         val status = conn.responseCode
                         if (status != 200) {
@@ -46,6 +48,9 @@ object AiEngine {
                         val raw = conn.inputStream.bufferedReader().use { it.readText().take(20000) }
                         val reply = JSONObject(raw).optString("reply").trim()
                         require(reply.isNotEmpty()) { "AI উত্তর পাওয়া যায়নি" }
+                        check(requestedAccount == GoogleAuth.account(ctx)?.id) { "অ্যাকাউন্ট পরিবর্তিত হয়েছে; আবার চেষ্টা করুন" }
+                        ctx.getSharedPreferences("ai_output", Context.MODE_PRIVATE).edit()
+                            .putString("last_reply", reply.take(1200)).apply()
                         reply.take(1200)
                     } finally { conn.disconnect() }
                 }
@@ -53,4 +58,32 @@ object AiEngine {
             }
         }
     }
+    fun report(ctx: Context, reply: String, reason: String, callback: (Result<Unit>) -> Unit) =
+        operation(ctx, "/feedback", "POST", JSONObject().put("reply", reply.take(1200))
+            .put("reason", reason.take(500)), callback)
+    fun deleteAccount(ctx: Context, callback: (Result<Unit>) -> Unit) =
+        operation(ctx, "/account", "DELETE", null, callback)
+    private fun operation(ctx: Context, path: String, method: String, body: JSONObject?, callback: (Result<Unit>) -> Unit) {
+        GoogleAuth.withIdToken(ctx) { tokenResult ->
+            val token = tokenResult.getOrElse { callback(Result.failure(it)); return@withIdToken }
+            pool.execute {
+                val result = runCatching {
+                    val conn = URL(ENDPOINT.removeSuffix("/reply") + path).openConnection() as HttpURLConnection
+                    try {
+                        conn.requestMethod = method; conn.connectTimeout = 12000; conn.readTimeout = 25000
+                        conn.instanceFollowRedirects = false
+                        conn.setRequestProperty("Authorization", "Bearer $token")
+                        if (body != null) {
+                            conn.doOutput = true; conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                        }
+                        check(conn.responseCode == 200) { "অনুরোধ সফল হয়নি (HTTP ${conn.responseCode})। আবার চেষ্টা করুন।" }
+                        Unit
+                    } finally { conn.disconnect() }
+                }
+                main.post { callback(result) }
+            }
+        }
+    }
+
 }

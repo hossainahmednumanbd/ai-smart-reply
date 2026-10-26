@@ -57,7 +57,7 @@ class AutoReplyService : Service() {
             Intent(this, AutoReplyService::class.java).setAction(STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("AI অটো রিপ্লাই চালু আছে")
             .setContentText("নতুন মেসেজে স্বয়ংক্রিয় উত্তর সক্রিয়। সেটিংস খুলতে চাপুন।")
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)

@@ -51,7 +51,7 @@ def build(check_only=False):
             raise ValueError("Wrong signing certificate. Refusing to produce an incompatible APK.")
         print("Verified permanent signing certificate: " + EXPECTED_SHA1, flush=True)
         if not check_only:
-            subprocess.run(["gradle", ":app:assembleRelease", "--no-daemon"], env=env, check=True)
+            subprocess.run(["gradle", ":app:assembleRelease", ":app:bundleRelease", "--no-daemon"], env=env, check=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

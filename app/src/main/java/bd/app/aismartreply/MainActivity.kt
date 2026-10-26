@@ -10,6 +10,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.Manifest
+import android.text.InputFilter
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -116,6 +118,8 @@ class MainActivity : Activity() {
             "conversation" -> conversation()
             "templates" -> templates()
             "settings" -> settingsPage()
+            "training" -> trainingPage()
+            "facebook" -> facebookPage()
         }
     }
     private fun heading(title: String, subtitle: String = "") {
@@ -126,7 +130,9 @@ class MainActivity : Activity() {
         column.addView(space(17))
     }
     private fun home() {
-        heading("🤖 AI Smart Reply", "স্মার্ট উত্তর, আপনার নিয়ন্ত্রণে")
+        val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
+        column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
+        heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
         val signedIn = GoogleAuth.account(this)
         val accountCard = card()
         accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
@@ -149,7 +155,7 @@ class MainActivity : Activity() {
             tile.addView(space(8))
             tile.addView(label(name, 13f, dark, true).apply { gravity = Gravity.CENTER })
             tile.addView(label(if (active) "● চালু" else "○ বন্ধ", 12f, if (active) Color.rgb(0, 160, 70) else muted).apply { gravity = Gravity.CENTER })
-            tile.setOnClickListener { page = "settings"; render() }
+            tile.setOnClickListener { page = if (index == 0) "facebook" else "settings"; render() }
             apps.addView(tile, LinearLayout.LayoutParams(0, dp(132), 1f).apply { marginEnd = dp(if (index == 2) 0 else 7) })
         }
         column.addView(apps); column.addView(space(10))
@@ -164,16 +170,9 @@ class MainActivity : Activity() {
         column.addView(space(5))
         menuCard("▣", "ম্যানুয়াল রিপ্লাই", "সাজেস্টেড উত্তর দেখে অনুমোদন দিন") { page = "chats"; render() }
         menuCard("ϟ", "অটো রিপ্লাই", "আপনার সেটিংস অনুযায়ী উত্তর পাঠান") { page = "settings"; render() }
+        menuCard("✦", "AI নির্দেশনা ও ব্যবসার তথ্য", "নিজের ভাষা, তথ্য ও নমুনা উত্তর সেট করুন") { page = "training"; render() }
+        menuCard("▣", "নিজের রিপ্লাই নিয়ম", "কোন মেসেজে কোন উত্তর যাবে ঠিক করুন") { page = "templates"; render() }
         menuCard("⚙", "সেটিংস", "ডিভাইস, অ্যাপ ও রিপ্লাই নিয়ন্ত্রণ") { page = "settings"; render() }
-        val count = ReplyStore.entries(this).size
-        val stats = horizontal()
-        listOf("$count\nমোট মেসেজ", "০\nযাচাইকৃত রিপ্লাই", "$count\nইনবক্স").forEach {
-            val tile = card().apply { gravity = Gravity.CENTER }
-            tile.addView(label(it, 15f, dark, true).apply { gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER })
-            stats.addView(tile, LinearLayout.LayoutParams(0, dp(82), 1f).apply { marginEnd = dp(6) })
-        }
-        column.addView(stats)
-        column.addView(space(10))
         column.addView(label("নোট: Facebook ব্যক্তিগত ইনবক্সের সরাসরি সংযোগ নেই। WhatsApp ও Messenger-এর অনুমোদিত Android নোটিফিকেশন ব্যবহার করা হয়।", 12f, muted))
     }
     private fun menuCard(icon: String, title: String, subtitle: String, click: () -> Unit) {
@@ -222,7 +221,7 @@ class MainActivity : Activity() {
                 tile.addView(label(item.message, 16f))
                 tile.addView(space(12))
                 tile.addView(label("সাজেস্টেড রিপ্লাই", 14f, blue, true))
-                tile.addView(label(ReplyStore.suggestion(item.message), 15f))
+                tile.addView(label(ReplyPreferences.suggestion(this, item.message), 15f))
                 tile.addView(space(10))
                 tile.addView(action("AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
                 tile.addView(space(8))
@@ -240,7 +239,7 @@ class MainActivity : Activity() {
             return
         }
         AlertDialog.Builder(this).setTitle("AI-তে মেসেজ পাঠাবেন?")
-            .setMessage("এই মেসেজের লেখা আপনার কনফিগার করা AI সার্ভারে পাঠানো হবে। ব্যক্তিগত বা সংবেদনশীল তথ্য থাকলে পাঠাবেন না।")
+            .setMessage("এই AI সেবা শুধু ১৮+ ব্যবসায়িক ব্যবহারের জন্য। সম্মতি দিলে আপনি ১৮+ নিশ্চিত করছেন। এই মেসেজের লেখা ও আপনার সংরক্ষিত AI নির্দেশনা Cloudflare ও Google Gemini-তে পাঠানো হবে। ব্যক্তিগত বা সংবেদনশীল তথ্য থাকলে পাঠাবেন না।")
             .setNegativeButton("বাতিল", null)
             .setPositiveButton("AI উত্তর তৈরি") { _, _ ->
                 Toast.makeText(this, "AI উত্তর তৈরি হচ্ছে...", Toast.LENGTH_SHORT).show()
@@ -251,7 +250,7 @@ class MainActivity : Activity() {
                 }
             }.show()
     }
-    private fun openReply(item: Incoming, initialReply: String = ReplyStore.suggestion(item.message)) {
+    private fun openReply(item: Incoming, initialReply: String = ReplyPreferences.suggestion(this, item.message)) {
         val edit = EditText(this).apply {
             setText(initialReply)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -268,21 +267,135 @@ class MainActivity : Activity() {
                 }
             }.show()
     }
+    private fun input(value: String, hintText: String, limit: Int) = EditText(this).apply {
+        setText(value); hint = hintText; textSize = 15f
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        filters = arrayOf(InputFilter.LengthFilter(limit))
+        minLines = 2; setPadding(dp(10), dp(8), dp(10), dp(8))
+    }
     private fun templates() {
-        heading("রিপ্লাই টেমপ্লেট", "এই সংস্করণে স্থানীয় নমুনা উত্তর")
-        listOf("আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি?",
-            "আপনার মেসেজ পেয়েছি। একটু পরে বিস্তারিত জানাচ্ছি।",
-            "আলহামদুলিল্লাহ, ভালো আছি। আপনি কেমন আছেন?",
-            "আপনাকেও ধন্যবাদ!").forEach {
+        heading("নিজের রিপ্লাই নিয়ম", "উপরের চালু নিয়মটি আগে মিলবে; AI অটোতেও এই উত্তর অগ্রাধিকার পাবে")
+        column.addView(action("+ নতুন নিয়ম যোগ করুন", { editRule(null) }))
+        column.addView(space(12))
+        val rules = ReplyPreferences.rules(this)
+        rules.forEachIndexed { index, rule ->
             val tile = card()
-            tile.addView(label(it, 16f))
-            tile.addView(space(10))
-            tile.addView(action("কপি করুন", {
-                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Reply", it))
-                Toast.makeText(this, "কপি হয়েছে", Toast.LENGTH_SHORT).show()
+            val enabled = Switch(this).apply { text = if (rule.exact) "পুরো মেসেজ মিলবে" else "শব্দ/বাক্যাংশ থাকবে"; isChecked = rule.enabled }
+            enabled.setOnCheckedChangeListener { _, checked ->
+                ReplyPreferences.saveRules(this, ReplyPreferences.rules(this).map { if (it.id == rule.id) it.copy(enabled = checked) else it })
+            }
+            tile.addView(enabled)
+            tile.addView(label("মেসেজ: ${rule.keywords}", 14f, blue, true))
+            tile.addView(space(6)); tile.addView(label(rule.reply, 16f)); tile.addView(space(8))
+            tile.addView(action("পরিবর্তন করুন", { editRule(rule) }, false))
+            if (index > 0) {
+                tile.addView(space(6)); tile.addView(action("অগ্রাধিকার বাড়ান ↑", {
+                    val list = ReplyPreferences.rules(this).toMutableList()
+                    val i = list.indexOfFirst { it.id == rule.id }
+                    if (i > 0) { val item = list.removeAt(i); list.add(i - 1, item); ReplyPreferences.saveRules(this, list) }
+                    render()
+                }, false))
+            }
+            tile.addView(space(6)); tile.addView(action("মুছুন", {
+                AlertDialog.Builder(this).setTitle("নিয়ম মুছবেন?").setMessage(rule.keywords)
+                    .setNegativeButton("বাতিল", null).setPositiveButton("মুছুন") { _, _ ->
+                        ReplyPreferences.saveRules(this, ReplyPreferences.rules(this).filterNot { it.id == rule.id }); render()
+                    }.show()
             }, false))
             addCard(tile)
+        }
+        val fallback = input(ReplyPreferences.fallback(this), "কোনো নিয়ম না মিললে টেমপ্লেট উত্তর", 700)
+        val tile = card()
+        tile.addView(label("সাধারণ টেমপ্লেট উত্তর", 18f, dark, true))
+        tile.addView(label("শুধু টেমপ্লেট মোডে ব্যবহৃত হবে। AI মোডে নিয়ম না মিললে AI উত্তর দেবে।", 13f, muted))
+        tile.addView(fallback)
+        tile.addView(action("সাধারণ উত্তর সংরক্ষণ", {
+            if (fallback.text.toString().isBlank()) fallback.error = "উত্তর লিখুন"
+            else { ReplyPreferences.saveText(this, "fallback", fallback.text.toString().trim()); Toast.makeText(this, "সংরক্ষিত হয়েছে", Toast.LENGTH_SHORT).show() }
+        }, false)); addCard(tile)
+        val test = input("", "পরীক্ষার মেসেজ লিখুন", 2000)
+        val preview = card(); preview.addView(label("নিয়ম পরীক্ষা", 18f, dark, true)); preview.addView(test)
+        preview.addView(action("কোন উত্তর যাবে দেখুন", {
+            val fixed = ReplyPreferences.matched(this, test.text.toString())
+            AlertDialog.Builder(this).setTitle("পরীক্ষার ফল")
+                .setMessage(fixed ?: "কোনো নিয়ম মেলেনি। AI মোডে AI উত্তর তৈরি করবে। টেমপ্লেট মোডে সাধারণ উত্তর যাবে।")
+                .setPositiveButton("ঠিক আছে", null).show()
+        }, false)); addCard(preview)
+    }
+    private fun editRule(existing: ReplyRule?) {
+        if (existing == null && ReplyPreferences.rules(this).size >= 30) {
+            Toast.makeText(this, "সর্বোচ্চ ৩০টি নিয়ম রাখা যাবে", Toast.LENGTH_LONG).show(); return
+        }
+        val box = vertical().apply { setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        box.addView(label("একাধিক বিকল্প | দিয়ে আলাদা করুন। যেমন: দাম|price|মূল্য", 13f, muted))
+        val keywords = input(existing?.keywords.orEmpty(), "কোন শব্দ বা মেসেজ এলে", 500)
+        val reply = input(existing?.reply.orEmpty(), "আপনার নিজের উত্তর", 700)
+        val exact = Switch(this).apply { text = "পুরো মেসেজ হুবহু মিলতে হবে"; isChecked = existing?.exact ?: false }
+        box.addView(keywords); box.addView(reply); box.addView(exact)
+        val scroll = ScrollView(this).apply { addView(box) }
+        val dialog = AlertDialog.Builder(this).setTitle(if (existing == null) "নতুন নিয়ম" else "নিয়ম পরিবর্তন")
+            .setView(scroll).setNegativeButton("বাতিল", null).setPositiveButton("সংরক্ষণ", null).create()
+        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val triggers = keywords.text.toString().split('|').map { it.trim() }.filter { it.isNotEmpty() }.joinToString("|")
+            val response = reply.text.toString().trim()
+            if (triggers.isEmpty()) { keywords.error = "অন্তত একটি শব্দ বা মেসেজ লিখুন"; return@setOnClickListener }
+            if (response.isEmpty()) { reply.error = "উত্তর লিখুন"; return@setOnClickListener }
+            val rule = ReplyRule(existing?.id ?: java.util.UUID.randomUUID().toString(), triggers, response, exact.isChecked, existing?.enabled ?: true)
+            val list = ReplyPreferences.rules(this).toMutableList()
+            val i = list.indexOfFirst { it.id == rule.id }; if (i < 0) list.add(0, rule) else list[i] = rule
+            ReplyPreferences.saveRules(this, list); dialog.dismiss(); render()
+        } }
+        dialog.show()
+    }
+    private fun trainingPage() {
+        heading("AI-কে নিজের মতো নির্দেশ দিন", "এগুলো উত্তর তৈরির নির্দেশনা; Gemini মডেল স্থায়ীভাবে ট্রেন হবে না")
+        val instructions = input(ReplyPreferences.text(this, "instructions"), "ভাষা ও আচরণ: যেমন ভদ্র বাংলায় সংক্ষিপ্ত উত্তর দিন, আপনি সম্বোধন করুন", 2000)
+        val facts = input(ReplyPreferences.text(this, "facts"), "যাচাই করা ব্যবসার তথ্য: নাম, ঠিকানা, সময়, পণ্য, মূল্য, নিয়ম। যা জানা নেই তা লিখবেন না।", 3000)
+        val examples = input(ReplyPreferences.text(this, "examples"), "নমুনা: প্রশ্ন: দোকান কোথায়? উত্তর: ...", 2000)
+        listOf("ভাষা ও আচরণ" to instructions, "ব্যবসার তথ্য" to facts, "প্রশ্ন ও উত্তরের নমুনা" to examples).forEach { (title, field) ->
+            val tile = card(); tile.addView(label(title, 18f, dark, true)); tile.addView(field); addCard(tile)
+        }
+        column.addView(label("এখানে পাসওয়ার্ড, OTP বা গোপন তথ্য রাখবেন না। AI অনুরোধের সঙ্গে এই তথ্য Cloudflare ও Google Gemini-তে যাবে। তথ্য না থাকলে AI-কে নিশ্চিত দাবি না করতে বলা হয়েছে; তবুও ভুল হতে পারে।", 13f, muted))
+        column.addView(space(12))
+        column.addView(action("AI নির্দেশনা সংরক্ষণ", {
+            ReplyPreferences.saveText(this, "instructions", instructions.text.toString().trim())
+            ReplyPreferences.saveText(this, "facts", facts.text.toString().trim())
+            ReplyPreferences.saveText(this, "examples", examples.text.toString().trim())
+            Toast.makeText(this, "সংরক্ষিত। পরের AI উত্তরে ব্যবহার হবে।", Toast.LENGTH_LONG).show()
+        }))
+    }
+    private fun facebookPage() {
+        heading("Facebook Page কমেন্ট", "Meta সংযোগ এখনো করা হয়নি")
+        val tile = card()
+        tile.addView(label("নিজের পরিচালিত Page-এর কমেন্ট", 18f, dark, true))
+        tile.addView(space(8))
+        tile.addView(label("Page-এর কমেন্টে AI উত্তর দিতে Meta App, Page অনুমতি, সার্ভারের webhook ও access token সংযোগ প্রয়োজন। অন্য ব্যবহারকারীর Page যুক্ত করতে Meta App Review লাগতে পারে। ব্যক্তিগত প্রোফাইলের কমেন্ট এখানে যুক্ত নেই।", 15f))
+        tile.addView(space(10))
+        tile.addView(label("এখন কোনো Facebook কমেন্ট পড়া বা স্বয়ংক্রিয়ভাবে পোস্ট করা হচ্ছে না।", 14f, muted))
+        addCard(tile)
+    }
+    private fun reportReply() {
+        val last = getSharedPreferences("ai_output", MODE_PRIVATE).getString("last_reply", "").orEmpty()
+        if (last.isEmpty()) { Toast.makeText(this, "আগে একটি AI উত্তর তৈরি করুন", Toast.LENGTH_LONG).show(); return }
+        val reason = input("", "কী সমস্যা হয়েছে লিখুন", 500)
+        AlertDialog.Builder(this).setTitle("AI উত্তর রিপোর্ট করুন")
+            .setMessage("সর্বশেষ AI উত্তর:\n$last\n\nআপনার নির্বাচিত এই উত্তর ও অভিযোগ Cloudflare সার্ভারে সর্বোচ্চ ৩১ দিন রাখা হবে। মূল মেসেজ পাঠানো হবে না।")
+            .setView(reason).setNegativeButton("বাতিল", null)
+            .setPositiveButton("রিপোর্ট পাঠান") { _, _ ->
+                AiEngine.report(this, last, reason.text.toString().ifBlank { "inappropriate_or_incorrect" }) { result ->
+                    AlertDialog.Builder(this).setTitle(if (result.isSuccess) "রিপোর্ট গ্রহণ করা হয়েছে" else "রিপোর্ট পাঠানো যায়নি")
+                        .setMessage(if (result.isSuccess) "অভিযোগ পর্যালোচনার জন্য সংরক্ষিত হয়েছে।" else result.exceptionOrNull()?.message)
+                        .setPositiveButton("ঠিক আছে", null).show()
+                }
+            }.show()
+    }
+    private fun eraseLocalData() {
+        ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
+        listOf("reply_settings", "reply_customization", "auto_dedup_v2", "ai_auto_state", "ai_output").forEach {
+            getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
+        }
+        GoogleAuth.client(this).revokeAccess().addOnCompleteListener {
+            GoogleAuth.signOut(this) { page = "home"; render() }
         }
     }
     private fun toggle(tile: LinearLayout, title: String, description: String, key: String) {
@@ -318,7 +431,11 @@ class MainActivity : Activity() {
         permissions.addView(label(if (hasAccess()) "✓ Notification Access চালু" else "⚠ Notification Access বন্ধ", 17f, if (hasAccess()) Color.rgb(0, 148, 74) else dark, true))
         permissions.addView(space(10))
         permissions.addView(action("Notification Access সেটিংস", {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            AlertDialog.Builder(this).setTitle("মেসেজের নোটিফিকেশন পড়ার অনুমতি")
+                .setMessage("AI Smart Reply নির্বাচিত WhatsApp ও Messenger-এর মেসেজের লেখা ও প্রেরকের নাম নোটিফিকেশন থেকে পড়বে, অ্যাপ বন্ধ থাকলেও। সর্বশেষ ৫০টি মেসেজ ফোনে থাকবে। টেমপ্লেট উত্তর ফোনেই মেলে। AI চালু করলে মেসেজ ও আপনার AI নির্দেশনা Cloudflare ও Google Gemini-তে পাঠানো হবে। অটো মোডে আপনার অনুমোদন ছাড়াই Reply action দিয়ে উত্তর যাবে। পূর্ণ চ্যাট বা সাধারণ SMS পড়া হবে না। যেকোনো সময় বন্ধ করতে পারবেন।")
+                .setNegativeButton("এখন নয়", null).setPositiveButton("সম্মত, সেটিংস খুলুন") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }.show()
         }, false))
         addCard(permissions)
         val platforms = card()
@@ -330,6 +447,8 @@ class MainActivity : Activity() {
         toggle(platforms, "🟢 WhatsApp Business", "ব্যবসার গ্রাহকের নোটিফিকেশন", "allow_com.whatsapp.w4b")
         toggle(platforms, "🔵 Messenger", "নোটিফিকেশন থেকে মেসেজ শনাক্ত", "allow_com.facebook.orca")
         addCard(platforms)
+        menuCard("✦", "AI নির্দেশনা ও ব্যবসার তথ্য", "নিজের মতো AI উত্তর সেট করুন") { page = "training"; render() }
+        menuCard("▣", "নিজের রিপ্লাই নিয়ম", "মেসেজের সঙ্গে নিজের উত্তর মিলিয়ে দিন") { page = "templates"; render() }
         val modes = card()
         modes.addView(label("রিপ্লাই মোড", 19f, dark, true))
         modes.addView(space(12))
@@ -355,9 +474,10 @@ class MainActivity : Activity() {
                         .setPositiveButton("ঠিক আছে", null).show()
                 } else {
                     AlertDialog.Builder(this).setTitle("AI অটো রিপ্লাই চালু?")
-                        .setMessage("নতুন নোটিফিকেশনের লেখা আপনার সংযুক্ত AI সার্ভারে পাঠানো হবে এবং উত্তর অনুমোদন ছাড়াই পাঠানোর চেষ্টা হবে। ভুল উত্তর বা API খরচ হতে পারে। গুরুত্বপূর্ণ কথোপকথনে এটি ব্যবহার করবেন না।")
+                        .setMessage("এই AI সেবা শুধু ১৮+ ব্যবসায়িক ব্যবহারের জন্য। সম্মতি দিলে আপনি ১৮+ নিশ্চিত করছেন। নিয়ম না মেলা নতুন মেসেজের লেখা ও আপনার AI নির্দেশনা Cloudflare ও Google Gemini-তে পাঠানো হবে, অ্যাপ বন্ধ থাকলেও। উত্তর অনুমোদন ছাড়াই পাঠানোর চেষ্টা হবে। নিয়ম মিললে আপনার লেখা উত্তর যাবে। AI ভুল করতে পারে। গুরুত্বপূর্ণ কথোপকথনে এটি ব্যবহার করবেন না।")
                         .setNegativeButton("বাতিল", null)
                         .setPositiveButton("সম্মত, চালু করুন") { _, _ ->
+                            if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 8402)
                             ReplyStore.set(this, "auto", false)
                             ReplyStore.set(this, "ai_auto", true)
                             AutoReplyService.sync(this)
@@ -398,6 +518,27 @@ class MainActivity : Activity() {
         notice.addView(label("গোপনীয়তা ও সীমাবদ্ধতা", 17f, dark, true))
         notice.addView(space(8))
         notice.addView(label("সর্বশেষ ৫০টি শনাক্ত করা নোটিফিকেশনের লেখা ফোনে রাখা হয়। AI উত্তর চাইলে আপনার অনুমতির পর মেসেজ Cloudflare ও Gemini-তে পাঠানো হয়। সব অ্যাপে রিপ্লাই কাজ নাও করতে পারে।", 14f, muted))
+        notice.addView(space(10))
+        notice.addView(action("গোপনীয়তার বিস্তারিত", {
+            AlertDialog.Builder(this).setTitle("গোপনীয়তা ও ডেটা")
+                .setMessage("পরিচালক: Hossain Ahmed Noman\nযোগাযোগ: hossainahmednumanbd@gmail.com\n\nGoogle লগইন, মেসেজ এবং AI নির্দেশনা শুধু রিপ্লাইয়ের কাজে ব্যবহৃত হয়। ফোনে সর্বশেষ ৫০টি নোটিফিকেশন, নিয়ম, নির্দেশনা ও সর্বশেষ AI উত্তর রাখা হয়। Gemini key ফোনে থাকে না। AI-তে শুধু মেসেজের লেখা ও নির্দেশনা যায়, প্রেরকের নাম আলাদা করে পাঠানো হয় না। লেখার ভেতরে থাকা নামসহ ব্যক্তিগত তথ্য অবশ্য যেতে পারে।\n\nCloudflare D1-এ Google subject ID-সহ দৈনিক ব্যবহার গণনা রাখা হয়। মেসেজ ও AI উত্তর সাধারণ অনুরোধে ডেটাবেসে সংরক্ষণ করা হয় না। রিপোর্ট করলে নির্বাচিত AI উত্তর ও অভিযোগ সর্বোচ্চ ৩১ দিন রাখা হয়। Google Gemini ও Cloudflare তাদের শর্ত অনুযায়ী অনুরোধ প্রক্রিয়া করে। Gemini free tier-এ সংবেদনশীল বা গোপন তথ্য পাঠাবেন না।\n\nঅটো মোড বন্ধ বা Notification Access প্রত্যাহার করতে পারবেন। নিচের অপশনে স্থানীয় ডেটা, সার্ভারের রিপোর্ট এবং সংযোগ মুছতে পারবেন। অপব্যবহার ঠেকাতে আজকের ব্যবহার গণনা দিন শেষ পর্যন্ত থাকবে। WhatsApp বা Messenger-এর নিজস্ব চ্যাট মোছা হবে না।")
+                .setPositiveButton("ঠিক আছে", null).show()
+        }, false))
+        notice.addView(space(8)); notice.addView(action("ভুল / আপত্তিকর AI উত্তর রিপোর্ট", { reportReply() }, false))
+        notice.addView(space(8)); notice.addView(action("অ্যাকাউন্টের ডেটা মুছুন ও সংযোগ সরান", {
+            AlertDialog.Builder(this).setTitle("এই অ্যাপের ডেটা মুছবেন?")
+                .setMessage("মেসেজের স্থানীয় কপি, নিজের নিয়ম, AI নির্দেশনা এবং সার্ভারের রিপোর্ট মুছে যাবে। Google সংযোগ সরবে। আজকের AI ব্যবহার গণনা দিন শেষ পর্যন্ত থাকবে।")
+                .setNegativeButton("বাতিল", null).setPositiveButton("মুছুন") { _, _ ->
+                    ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
+                    if (!AiEngine.configured(this)) eraseLocalData()
+                    else AiEngine.deleteAccount(this) { result ->
+                        if (result.isSuccess) eraseLocalData()
+                        else AlertDialog.Builder(this).setTitle("সার্ভারের ডেটা মোছা যায়নি")
+                            .setMessage("অটো রিপ্লাই বন্ধ আছে। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন; ডেটা মোছার অনুরোধ অসম্পূর্ণ রয়েছে।")
+                            .setPositiveButton("ঠিক আছে", null).show()
+                    }
+                }.show()
+        }, false))
         addCard(notice)
         column.addView(action("✓ সেটিংস সংরক্ষিত হয় স্বয়ংক্রিয়ভাবে", { Toast.makeText(this, "সেটিংস সংরক্ষিত আছে", Toast.LENGTH_SHORT).show() }))
     }

@@ -1,8 +1,8 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "bd.app.aismartreply"
-    compileSdk = 35
-    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "0.2.1" }
+    compileSdk = 36
+    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 36; versionCode = 4; versionName = "0.3.0" }
     val permanentStore = System.getenv("ANDROID_KEYSTORE_PATH")
     if (!permanentStore.isNullOrBlank()) {
         signingConfigs {
@@ -21,4 +21,4 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
-dependencies { implementation("com.google.android.gms:play-services-auth:21.4.0") }
+dependencies { testImplementation("junit:junit:4.13.2"); implementation("com.google.android.gms:play-services-auth:21.4.0") }
