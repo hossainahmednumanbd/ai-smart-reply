@@ -25,4 +25,15 @@ class ReplyRulesTest {
         assertFalse(ReplyRules.matches(r, "aaab"))
         assertFalse(ReplyRules.matches(r, "unrelated"))
     }
+    @Test fun disabledFallbackSendsNothingForUnmatchedMessages() {
+        assertNull(ReplyRules.templateReply(emptyList(), "অচেনা মেসেজ", false, "সাধারণ উত্তর"))
+    }
+    @Test fun enabledFallbackOnlyAppliesToUnmatchedMessages() {
+        val rules = listOf(ReplyRule("1", "দাম", "নিজের উত্তর"))
+        assertEquals("সাধারণ উত্তর", ReplyRules.templateReply(rules, "অন্য মেসেজ", true, "সাধারণ উত্তর"))
+        assertEquals("নিজের উত্তর", ReplyRules.templateReply(rules, "দাম কত", false, "সাধারণ উত্তর"))
+        assertEquals("নিজের উত্তর", ReplyRules.templateReply(rules, "দাম কত", true, "সাধারণ উত্তর"))
+        assertNull(ReplyRules.templateReply(emptyList(), "অন্য মেসেজ", true, "  "))
+    }
+
 }

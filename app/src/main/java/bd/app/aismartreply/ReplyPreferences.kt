@@ -28,7 +28,10 @@ object ReplyPreferences {
     }
     fun matched(ctx: Context, message: String) = ReplyRules.resolve(rules(ctx), message)
     fun fallback(ctx: Context) = prefs(ctx).getString("fallback", "আপনার মেসেজ পেয়েছি। একটু পরে বিস্তারিত জানাচ্ছি।").orEmpty()
-    fun suggestion(ctx: Context, message: String) = matched(ctx, message) ?: fallback(ctx)
+    fun fallbackEnabled(ctx: Context) = prefs(ctx).getBoolean("fallback_enabled", false)
+    fun setFallbackEnabled(ctx: Context, enabled: Boolean) { prefs(ctx).edit().putBoolean("fallback_enabled", enabled).apply() }
+    fun templateReply(ctx: Context, message: String) = ReplyRules.templateReply(rules(ctx), message, fallbackEnabled(ctx), fallback(ctx))
+    fun suggestion(ctx: Context, message: String) = templateReply(ctx, message).orEmpty()
     fun text(ctx: Context, key: String) = prefs(ctx).getString(key, "").orEmpty()
     fun saveText(ctx: Context, key: String, value: String) { prefs(ctx).edit().putString(key, value).apply() }
     fun profile(ctx: Context) = JSONObject().put("instructions", text(ctx, "instructions").take(2000))

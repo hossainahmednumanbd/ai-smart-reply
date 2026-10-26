@@ -20,6 +20,8 @@ object ReplyRules {
             else input.contains(term)
         }
     }
+    fun templateReply(rules: List<ReplyRule>, message: String, fallbackEnabled: Boolean, fallback: String): String? =
+        resolve(rules, message) ?: fallback.takeIf { fallbackEnabled && it.isNotBlank() }
     fun resolve(rules: List<ReplyRule>, message: String): String? =
         rules.firstOrNull { matches(it, message) }?.reply
 }

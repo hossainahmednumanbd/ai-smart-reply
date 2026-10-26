@@ -151,8 +151,9 @@ class ReplyListener : NotificationListenerService() {
                 }
             }
         } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {
-            if (shouldAutoReply(app, sender, message)) {
-                send(this, sbn.key, ReplyPreferences.suggestion(this, message))
+            val response = ReplyPreferences.templateReply(this, message)
+            if (response != null && shouldAutoReply(app, sender, message)) {
+                send(this, sbn.key, response)
             }
         }
     }

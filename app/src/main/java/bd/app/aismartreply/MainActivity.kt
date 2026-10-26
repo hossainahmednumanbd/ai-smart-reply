@@ -221,7 +221,7 @@ class MainActivity : Activity() {
                 tile.addView(label(item.message, 16f))
                 tile.addView(space(12))
                 tile.addView(label("সাজেস্টেড রিপ্লাই", 14f, blue, true))
-                tile.addView(label(ReplyPreferences.suggestion(this, item.message), 15f))
+                tile.addView(label(ReplyPreferences.suggestion(this, item.message).ifEmpty { "কোনো নিয়ম মেলেনি; সাধারণ টেমপ্লেট বন্ধ আছে। নিজের উত্তর লিখুন অথবা AI উত্তর তৈরি করুন।" }, 15f))
                 tile.addView(space(10))
                 tile.addView(action("AI দিয়ে উত্তর তৈরি করুন", { generateAi(item) }, false))
                 tile.addView(space(8))
@@ -307,7 +307,15 @@ class MainActivity : Activity() {
         val fallback = input(ReplyPreferences.fallback(this), "কোনো নিয়ম না মিললে টেমপ্লেট উত্তর", 700)
         val tile = card()
         tile.addView(label("সাধারণ টেমপ্লেট উত্তর", 18f, dark, true))
-        tile.addView(label("শুধু টেমপ্লেট মোডে ব্যবহৃত হবে। AI মোডে নিয়ম না মিললে AI উত্তর দেবে।", 13f, muted))
+        val fallbackSwitch = Switch(this).apply {
+            text = "সাধারণ টেমপ্লেট উত্তর চালু"; textSize = 15f
+            isChecked = ReplyPreferences.fallbackEnabled(this@MainActivity)
+        }
+        fallbackSwitch.setOnCheckedChangeListener { _, enabled ->
+            ReplyPreferences.setFallbackEnabled(this, enabled)
+        }
+        tile.addView(fallbackSwitch)
+        tile.addView(label("বন্ধ থাকলে কোনো নিয়ম না মেলা মেসেজে সাধারণ টেমপ্লেট যাবে না। চালু থাকলে শুধু টেমপ্লেট অটো মোডে যাবে। AI মোডে নিয়ম না মিললে AI উত্তর তৈরি করবে। সুইচের পরিবর্তন সঙ্গে সঙ্গে সংরক্ষিত হয়।", 13f, muted))
         tile.addView(fallback)
         tile.addView(action("সাধারণ উত্তর সংরক্ষণ", {
             if (fallback.text.toString().isBlank()) fallback.error = "উত্তর লিখুন"
@@ -318,7 +326,9 @@ class MainActivity : Activity() {
         preview.addView(action("কোন উত্তর যাবে দেখুন", {
             val fixed = ReplyPreferences.matched(this, test.text.toString())
             AlertDialog.Builder(this).setTitle("পরীক্ষার ফল")
-                .setMessage(fixed ?: "কোনো নিয়ম মেলেনি। AI মোডে AI উত্তর তৈরি করবে। টেমপ্লেট মোডে সাধারণ উত্তর যাবে।")
+                .setMessage(fixed ?: if (ReplyPreferences.fallbackEnabled(this))
+                    "কোনো নিয়ম মেলেনি। টেমপ্লেট অটো মোডে যাবে:\n${ReplyPreferences.fallback(this)}\n\nAI মোডে AI উত্তর তৈরি করবে।"
+                    else "কোনো নিয়ম মেলেনি। সাধারণ টেমপ্লেট বন্ধ, তাই টেমপ্লেট অটো মোডে উত্তর যাবে না। AI মোডে AI উত্তর তৈরি করবে।")
                 .setPositiveButton("ঠিক আছে", null).show()
         }, false)); addCard(preview)
     }
