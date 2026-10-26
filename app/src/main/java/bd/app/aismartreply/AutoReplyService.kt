@@ -37,6 +37,18 @@ class AutoReplyService : Service() {
         }
     }
 
+    private val healthHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val healthCheck = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (!ReplyStore.enabled(this@AutoReplyService, "auto") && !ReplyStore.enabled(this@AutoReplyService, "ai_auto")) {
+                stopSelf(); return
+            }
+            ReplyListener.reconnect(this@AutoReplyService)
+            healthHandler.postDelayed(this, 30000L)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         AutoReplyGuard.installSafetyUpdate(this)
@@ -69,12 +81,14 @@ class AutoReplyService : Service() {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else startForeground(NOTIFICATION_ID, notification)
         running = true
-        ReplyListener.reconnect(this)
+        healthHandler.removeCallbacks(healthCheck)
+        healthHandler.post(healthCheck)
         return START_STICKY
     }
 
     override fun onDestroy() {
         running = false
+        healthHandler.removeCallbacks(healthCheck)
         super.onDestroy()
     }
 

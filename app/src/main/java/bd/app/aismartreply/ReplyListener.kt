@@ -64,21 +64,26 @@ class ReplyListener : NotificationListenerService() {
             } catch (_: Exception) { AutoReplyGuard.forgetSent(ctx, sentMarker); false }
         }
         fun connected() = instance != null
+        private val recovery = ListenerRecovery()
         fun reconnect(ctx: Context) {
-            if (instance == null) {
+            val access = androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
+            val current = instance
+            val healthy = current != null && runCatching { current.activeNotifications != null }.getOrDefault(false)
+            if (!healthy && instance === current) instance = null
+            recovery.check(access, healthy, android.os.SystemClock.elapsedRealtime()) {
                 try { NotificationListenerService.requestRebind(ComponentName(ctx, ReplyListener::class.java)) } catch (_: Exception) {}
             }
         }
         @Volatile private var instance: ReplyListener? = null
     }
     override fun onCreate() { super.onCreate(); AutoReplyGuard.installSafetyUpdate(this) }
-    override fun onListenerConnected() { super.onListenerConnected(); instance = this }
+    override fun onListenerConnected() { super.onListenerConnected(); instance = this; recovery.reset() }
     override fun onListenerDisconnected() {
-        instance = null
+        if (instance === this) instance = null
         super.onListenerDisconnected()
         if (ReplyStore.enabled(this, "ai_auto") || ReplyStore.enabled(this, "auto")) reconnect(this)
     }
-    override fun onDestroy() { instance = null; super.onDestroy() }
+    override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val app = packages[sbn.packageName] ?: return

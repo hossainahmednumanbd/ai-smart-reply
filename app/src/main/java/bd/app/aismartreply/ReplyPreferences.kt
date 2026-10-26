@@ -17,13 +17,13 @@ object ReplyPreferences {
             val a = JSONArray(raw)
             (0 until a.length()).map { i -> val o = a.getJSONObject(i)
                 ReplyRule(o.getString("id"), o.getString("keywords"), o.getString("reply"),
-                    o.optBoolean("exact"), o.optBoolean("enabled", true)) }
+                    o.optBoolean("exact"), o.optBoolean("enabled", true), o.optBoolean("allWords", false)) }
         }.getOrElse { defaults() }
     }
     fun saveRules(ctx: Context, rules: List<ReplyRule>) {
         val a = JSONArray()
         rules.take(30).forEach { a.put(JSONObject().put("id", it.id).put("keywords", it.keywords)
-            .put("reply", it.reply).put("exact", it.exact).put("enabled", it.enabled)) }
+            .put("reply", it.reply).put("exact", it.exact).put("enabled", it.enabled).put("allWords", it.allWords)) }
         prefs(ctx).edit().putString("rules", a.toString()).apply()
     }
     fun matched(ctx: Context, message: String) = ReplyRules.resolve(rules(ctx), message)

@@ -274,13 +274,13 @@ class MainActivity : Activity() {
         minLines = 2; setPadding(dp(10), dp(8), dp(10), dp(8))
     }
     private fun templates() {
-        heading("নিজের রিপ্লাই নিয়ম", "উপরের চালু নিয়মটি আগে মিলবে; AI অটোতেও এই উত্তর অগ্রাধিকার পাবে")
+        heading("নিজের রিপ্লাই নিয়ম", "হুবহু ও বেশি প্রয়োজনীয় শব্দ মেলা নিয়ম আগে; সমান হলে ওপরের নিয়ম আগে")
         column.addView(action("+ নতুন নিয়ম যোগ করুন", { editRule(null) }))
         column.addView(space(12))
         val rules = ReplyPreferences.rules(this)
         rules.forEachIndexed { index, rule ->
             val tile = card()
-            val enabled = Switch(this).apply { text = if (rule.exact) "পুরো মেসেজ মিলবে" else "শব্দ/বাক্যাংশ থাকবে"; isChecked = rule.enabled }
+            val enabled = Switch(this).apply { text = when { rule.exact -> "পুরো মেসেজ মিলবে"; rule.allWords -> "সব প্রয়োজনীয় শব্দ মিলবে"; else -> "শব্দ/বাক্যাংশ থাকবে" }; isChecked = rule.enabled }
             enabled.setOnCheckedChangeListener { _, checked ->
                 ReplyPreferences.saveRules(this, ReplyPreferences.rules(this).map { if (it.id == rule.id) it.copy(enabled = checked) else it })
             }
@@ -340,8 +340,13 @@ class MainActivity : Activity() {
         box.addView(label("একাধিক বিকল্প | দিয়ে আলাদা করুন। যেমন: দাম|price|মূল্য", 13f, muted))
         val keywords = input(existing?.keywords.orEmpty(), "কোন শব্দ বা মেসেজ এলে", 500)
         val reply = input(existing?.reply.orEmpty(), "আপনার নিজের উত্তর", 700)
-        val exact = Switch(this).apply { text = "পুরো মেসেজ হুবহু মিলতে হবে"; isChecked = existing?.exact ?: false }
-        box.addView(keywords); box.addView(reply); box.addView(exact)
+        val matchMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("শব্দ/বাক্যাংশ থাকবে", "পুরো মেসেজ হুবহু মিলবে", "সব প্রয়োজনীয় শব্দ মিলবে"))
+            setSelection(when { existing?.exact == true -> 1; existing?.allWords == true -> 2; else -> 0 })
+        }
+        box.addView(keywords); box.addView(reply); box.addView(matchMode)
+        box.addView(label("সব প্রয়োজনীয় শব্দ মোডে: বিকাশ/bkash & এজেন্ট/agent & নাম্বার/নম্বর/number\n& দিয়ে প্রয়োজনীয় শব্দের দল, / দিয়ে একই শব্দের বিকল্প লিখুন। সব দল মেসেজে থাকতে হবে; মাঝে অন্য লেখা থাকতে পারে। | দিয়ে আলাদা সম্পূর্ণ নিয়মের বিকল্প। বানান বা অর্থ নিজে থেকে অনুমান করবে না।", 13f, muted))
         val scroll = ScrollView(this).apply { addView(box) }
         val dialog = AlertDialog.Builder(this).setTitle(if (existing == null) "নতুন নিয়ম" else "নিয়ম পরিবর্তন")
             .setView(scroll).setNegativeButton("বাতিল", null).setPositiveButton("সংরক্ষণ", null).create()
@@ -350,7 +355,10 @@ class MainActivity : Activity() {
             val response = reply.text.toString().trim()
             if (triggers.isEmpty()) { keywords.error = "অন্তত একটি শব্দ বা মেসেজ লিখুন"; return@setOnClickListener }
             if (response.isEmpty()) { reply.error = "উত্তর লিখুন"; return@setOnClickListener }
-            val rule = ReplyRule(existing?.id ?: java.util.UUID.randomUUID().toString(), triggers, response, exact.isChecked, existing?.enabled ?: true)
+            if (matchMode.selectedItemPosition == 2 && !ReplyRules.validAllWords(triggers)) {
+                keywords.error = "অন্তত দুটি শব্দের দল & দিয়ে লিখুন; কোনো দল খালি রাখবেন না"; return@setOnClickListener
+            }
+            val rule = ReplyRule(existing?.id ?: java.util.UUID.randomUUID().toString(), triggers, response, matchMode.selectedItemPosition == 1, existing?.enabled ?: true, matchMode.selectedItemPosition == 2)
             val list = ReplyPreferences.rules(this).toMutableList()
             val i = list.indexOfFirst { it.id == rule.id }; if (i < 0) list.add(0, rule) else list[i] = rule
             ReplyPreferences.saveRules(this, list); dialog.dismiss(); render()
@@ -451,6 +459,17 @@ class MainActivity : Activity() {
                 .setNegativeButton("এখন নয়", null).setPositiveButton("সম্মত, সেটিংস খুলুন") { _, _ ->
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }.show()
+        }, false))
+        permissions.addView(space(8))
+        permissions.addView(label(if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা প্রয়োজন", 14f))
+        permissions.addView(action("মেসেজ সংযোগ আবার চেষ্টা করুন", {
+            ReplyListener.reconnect(this)
+            AutoReplyService.sync(this)
+            Toast.makeText(this, "পুনঃসংযোগের অনুরোধ করা হয়েছে; নতুন মেসেজ দিয়ে পরীক্ষা করুন", Toast.LENGTH_LONG).show()
+        }, false))
+        permissions.addView(label("ফোনের Battery সেটিংসে এই অ্যাপের জন্য No restrictions/Unrestricted রাখুন। ফোনে Background autostart থাকলে অনুমতি দিন। Force stop করলে অ্যাপ আবার খুলতে হবে। পুরোনো মেসেজে হঠাৎ উত্তর যাবে না।", 13f, muted))
+        permissions.addView(action("অ্যাপের ব্যাকগ্রাউন্ড সেটিংস", {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
         }, false))
         addCard(permissions)
         val platforms = card()

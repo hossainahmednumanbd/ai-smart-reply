@@ -164,4 +164,16 @@ class NotificationReplyFlowTest {
         assertTrue(ReplyStore.enabled(ctx, "auto"))
     }
 
+    @Test fun newMatchModePersistsAndLegacyExactRulesArePreserved() {
+        val rules = listOf(ReplyRule("agent", "bkash & agent & number", "details", allWords = true),
+            ReplyRule("old", "hi", "hello", exact = true))
+        ReplyPreferences.saveRules(ctx, rules)
+        assertEquals(rules, ReplyPreferences.rules(ctx))
+        assertEquals("details", ReplyPreferences.matched(ctx, "Vai bkash agent number daw"))
+        assertNull(ReplyPreferences.matched(ctx, "please hi"))
+        ctx.getSharedPreferences("reply_customization", Context.MODE_PRIVATE).edit()
+            .putString("rules", """[{"id":"legacy","keywords":"hi","reply":"hello","exact":true,"enabled":true}]""").commit()
+        assertFalse(ReplyPreferences.rules(ctx).single().allWords)
+        assertEquals("hello", ReplyPreferences.matched(ctx, "hi"))
+    }
 }
