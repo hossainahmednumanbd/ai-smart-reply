@@ -1,10 +1,13 @@
-name: Android debug APK
+name: Android signed APK
 on:
   workflow_dispatch:
   push:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: android-signed-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -22,17 +25,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
-      - name: Show APK signing SHA-1 fingerprint
+      - name: Compile Android code
+        run: gradle :app:compileDebugKotlin --no-daemon
+      - name: Build APK with permanent signing key
+        env:
+          ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
+        run: python3 scripts/build_signed_apk.py
+      - name: Verify APK signing certificate
         run: |
-          echo "=== Android debug APK signing certificate ==="
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
-          echo "=== SHA-1 fingerprint ==="
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -i "SHA-1" || true
-          echo "Note: Debug signing fingerprints can change between GitHub-hosted runners."
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: ai-smart-reply-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: ai-smart-reply-signed-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

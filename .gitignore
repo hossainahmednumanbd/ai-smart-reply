@@ -6,3 +6,8 @@ local.properties
 *.iml
 *.jks
 *.keystore
+*.p12
+*.pfx
+signing-secret.txt
+recovery.json
+*signing-backup*.zip
