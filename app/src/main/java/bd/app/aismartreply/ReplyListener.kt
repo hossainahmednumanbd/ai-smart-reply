@@ -2,6 +2,8 @@ package bd.app.aismartreply
 
 import android.app.Notification
 import android.app.RemoteInput
+import android.content.ComponentName
+import android.os.PowerManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -65,10 +67,20 @@ class ReplyListener : NotificationListenerService() {
                 true
             } catch (_: Exception) { false }
         }
+        fun connected() = instance != null
+        fun reconnect(ctx: Context) {
+            if (instance == null) {
+                try { NotificationListenerService.requestRebind(ComponentName(ctx, ReplyListener::class.java)) } catch (_: Exception) {}
+            }
+        }
         @Volatile private var instance: ReplyListener? = null
     }
     override fun onListenerConnected() { super.onListenerConnected(); instance = this }
-    override fun onListenerDisconnected() { instance = null; super.onListenerDisconnected() }
+    override fun onListenerDisconnected() {
+        instance = null
+        super.onListenerDisconnected()
+        if (ReplyStore.enabled(this, "ai_auto")) reconnect(this)
+    }
     override fun onDestroy() { instance = null; super.onDestroy() }
 
     // Persist recent sends across listener restarts; notification keys change after replies.
@@ -91,6 +103,8 @@ class ReplyListener : NotificationListenerService() {
         if (!ReplyStore.enabled(this, "allow_${sbn.packageName}")) return
         val n = sbn.notification
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (n.category in listOf(Notification.CATEGORY_CALL, Notification.CATEGORY_SERVICE,
+                Notification.CATEGORY_TRANSPORT)) return
         val extras = n.extras ?: return
         val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
         val message = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
@@ -113,13 +127,25 @@ class ReplyListener : NotificationListenerService() {
                 sensitive.none { message.contains(it, true) }) {
                 state.edit().putLong("day", day).putInt("count", count + 1)
                     .putString("last_signature", signature).apply()
+                state.edit().putString("status", "AI উত্তর তৈরি হচ্ছে").apply()
+                val wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:auto-reply")
+                    .apply { acquire(35000L) }
                 AiEngine.generate(this, message) { result ->
-                    val reply = result.getOrNull() ?: return@generate
-                    if (ReplyStore.enabled(this, "ai_auto") && reply.length in 2..700 &&
-                        System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
-                        send(this, sbn.key, reply)) {
-                        state.edit().putLong("last_sent", System.currentTimeMillis()).apply()
-                    }
+                    try {
+                        val reply = result.getOrNull()
+                        if (reply == null) {
+                            // Store only the error category, never message text or login tokens.
+                            state.edit().putString("status", "AI অনুরোধ ব্যর্থ; ম্যানুয়াল AI পরীক্ষা করুন").apply()
+                        } else if (ReplyStore.enabled(this, "ai_auto") && reply.length in 2..700 &&
+                            System.currentTimeMillis() - state.getLong("last_sent", 0L) > 60000L &&
+                            send(this, sbn.key, reply)) {
+                            state.edit().putLong("last_sent", System.currentTimeMillis())
+                                .putString("status", "অটো রিপ্লাই পাঠানোর অনুরোধ সফল").apply()
+                        } else {
+                            state.edit().putString("status", "পাঠানো হয়নি: মোড, বিরতি বা সক্রিয় Reply নোটিফিকেশন পরীক্ষা করুন").apply()
+                        }
+                    } finally { if (wakeLock.isHeld) wakeLock.release() }
                 }
             }
         } else if (ReplyStore.enabled(this, "auto") && actionFor(n) != null) {

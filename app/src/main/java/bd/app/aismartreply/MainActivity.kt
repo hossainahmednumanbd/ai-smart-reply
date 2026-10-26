@@ -58,13 +58,19 @@ class MainActivity : Activity() {
         else Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
-    override fun onResume() { super.onResume(); render() }
+    override fun onResume() {
+        super.onResume()
+        if (hasAccess()) ReplyListener.reconnect(this)
+        AutoReplyService.sync(this)
+        render()
+    }
     @Deprecated("Google Sign-In activity result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == GoogleAuth.REQUEST_CODE) {
             GoogleAuth.handleResult(data).onSuccess {
                 ReplyStore.set(this, "ai_auto", false)
+                AutoReplyService.sync(this)
                 Toast.makeText(this, "Google লগইন সফল", Toast.LENGTH_LONG).show()
             }.onFailure {
                 AlertDialog.Builder(this).setTitle("Google লগইন ব্যর্থ")
@@ -289,13 +295,19 @@ class MainActivity : Activity() {
         row.addView(toggle)
         tile.addView(row); tile.addView(space(12))
         toggle.setOnCheckedChangeListener { _, enabled ->
+            // Programmatic confirmation must not open the consent dialog again.
+            if (enabled && ReplyStore.enabled(this, key)) return@setOnCheckedChangeListener
             if (key == "auto" && enabled) {
-                ReplyStore.set(this, "ai_auto", false)
                 toggle.isChecked = false
                 AlertDialog.Builder(this).setTitle("অটো রিপ্লাই চালু করবেন?")
                     .setMessage("সমর্থিত নতুন নোটিফিকেশনে আপনার অনুমোদন ছাড়াই টেমপ্লেট উত্তর পাঠানো হতে পারে। এটি AI নয়। ভুল উত্তর যাওয়ার ঝুঁকি আছে।")
                     .setNegativeButton("বাতিল", null)
-                    .setPositiveButton("চালু করুন") { _, _ -> ReplyStore.set(this, key, true); toggle.isChecked = true }
+                    .setPositiveButton("চালু করুন") { _, _ ->
+                        ReplyStore.set(this, "ai_auto", false)
+                        ReplyStore.set(this, key, true)
+                        AutoReplyService.sync(this)
+                        render()
+                    }
                     .show()
             } else ReplyStore.set(this, key, enabled)
         }
@@ -334,6 +346,7 @@ class MainActivity : Activity() {
         modes.addView(aiAuto)
         modes.addView(label("প্রতিদিন সর্বোচ্চ ২০টি AI অনুরোধ; দুই উত্তরের মাঝে অন্তত ৬০ সেকেন্ড। সংবেদনশীল মেসেজ বাদ যাবে। AI ভুল করতে পারে।", 12f, muted))
         aiAuto.setOnCheckedChangeListener { _, checked ->
+            if (checked && ReplyStore.enabled(this, "ai_auto")) return@setOnCheckedChangeListener
             if (checked) {
                 aiAuto.isChecked = false
                 if (!AiEngine.configured(this)) {
@@ -347,11 +360,21 @@ class MainActivity : Activity() {
                         .setPositiveButton("সম্মত, চালু করুন") { _, _ ->
                             ReplyStore.set(this, "auto", false)
                             ReplyStore.set(this, "ai_auto", true)
-                            aiAuto.isChecked = true
+                            AutoReplyService.sync(this)
+                            render()
                         }.show()
                 }
-            } else ReplyStore.set(this, "ai_auto", false)
+            } else {
+                ReplyStore.set(this, "ai_auto", false)
+                AutoReplyService.sync(this)
+            }
         }
+        modes.addView(space(10))
+        modes.addView(label(if (AutoReplyService.running) "✓ ব্যাকগ্রাউন্ড সেবা চালু" else "ব্যাকগ্রাউন্ড সেবা বন্ধ", 13f, muted))
+        modes.addView(label(if (ReplyListener.connected()) "✓ মেসেজ নোটিফিকেশন সংযুক্ত" else "মেসেজ নোটিফিকেশন সংযোগ অপেক্ষায়", 13f, muted))
+        val lastState = getSharedPreferences("ai_auto_state", MODE_PRIVATE).getString("status", "").orEmpty()
+        if (lastState.isNotEmpty()) modes.addView(label("সর্বশেষ অবস্থা: $lastState", 13f, muted))
+        modes.addView(action("সংযোগের অবস্থা দেখুন", { render() }, false))
         addCard(modes)
         val account = card()
         account.addView(label("Google Login ও Gemini AI", 19f, dark, true))
@@ -364,6 +387,7 @@ class MainActivity : Activity() {
             account.addView(space(8))
             account.addView(action("Google থেকে লগআউট", {
                 ReplyStore.set(this, "ai_auto", false)
+                AutoReplyService.sync(this)
                 GoogleAuth.signOut(this) { render() }
             }, false))
         }
