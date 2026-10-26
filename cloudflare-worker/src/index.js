@@ -44,6 +44,71 @@ async function enforceQuota(db, userId) {
   ).bind(bucket).first();
   return result !== null;
 }
+
+// Cache only a successfully used fallback, scoped to this Worker's configuration.
+let resolvedGeminiModel;
+function normalizeGeminiModel(value) {
+  return String(value || "gemini-2.5-flash-lite").trim().replace(/^models\//, "");
+}
+async function generateGemini(env, message) {
+  const configured = normalizeGeminiModel(env.GEMINI_MODEL);
+  const cached = resolvedGeminiModel;
+  const model = cached && cached.apiKey === env.GEMINI_API_KEY &&
+    cached.configured === configured && cached.expires > Date.now() ? cached.model : configured;
+  const controller = new AbortController();
+  // One deadline covers model discovery and retries, within the app's timeout.
+  const timer = setTimeout(() => controller.abort(), 20000);
+  const headers = { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY };
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: "Write a short, helpful, natural reply to the incoming message in the same language (Bangla, Banglish, or English). Do not invent prices, availability, business policies, or personal facts. Do not provide definitive medical, legal, or financial advice. Return only the suggested reply." }] },
+    contents: [{ role: "user", parts: [{ text: message }] }],
+    generationConfig: { maxOutputTokens: 220, temperature: 0.5 }
+  });
+  async function generate(name) {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" +
+      encodeURIComponent(name) + ":generateContent", {
+        method: "POST", signal: controller.signal, headers, body
+      });
+    // Read the body under the same deadline as the request.
+    const data = await response.json().catch(() => null);
+    return { response, data };
+  }
+  try {
+    let result = await generate(model);
+    if (result.response.status !== 404) return result;
+    resolvedGeminiModel = undefined;
+    // Discover models using the existing secret. Never return the key or model list.
+    const listing = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", {
+      signal: controller.signal, headers: { "x-goog-api-key": env.GEMINI_API_KEY }
+    });
+    if (!listing.ok) {
+      return { response: listing, data: await listing.json().catch(() => null) };
+    }
+    const available = await listing.json();
+    const candidates = [...new Set((Array.isArray(available.models) ? available.models : [])
+      .filter(m => Array.isArray(m.supportedGenerationMethods) &&
+        m.supportedGenerationMethods.includes("generateContent"))
+      .map(m => normalizeGeminiModel(m.name))
+      .filter(name => /^gemini-[a-z0-9.-]+$/.test(name) && name.includes("flash") &&
+        !/image|audio|tts|live|native|robotics|computer-use/.test(name) && name !== model))]
+      .sort((a, b) => {
+        const rank = name => (/preview|experimental|exp-/.test(name) ? 2 : 0) +
+          (name.includes("lite") ? 0 : 1);
+        return rank(a) - rank(b) || b.localeCompare(a, "en", { numeric: true });
+      });
+    // Retry only missing-model errors, never quota/authentication failures.
+    for (const candidate of candidates.slice(0, 2)) {
+      result = await generate(candidate);
+      if (result.response.ok) {
+        resolvedGeminiModel = { apiKey: env.GEMINI_API_KEY, configured,
+          model: candidate, expires: Date.now() + 60 * 60 * 1000 };
+      }
+      if (result.response.status !== 404) return result;
+    }
+    return result;
+  } finally { clearTimeout(timer); }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -66,28 +131,13 @@ export default {
     try {
       if (!await enforceQuota(env.DB, userId)) return json(429, { error: "Daily limit reached (20 requests)" });
     } catch { return json(503, { error: "Usage database unavailable" }); }
-    const model = env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-    const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000);
-      let response;
-      try {
-        response = await fetch(endpoint, {
-          method: "POST", signal: controller.signal,
-          headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: "Write a short, helpful, natural reply to the incoming message in the same language (Bangla, Banglish, or English). Do not invent prices, availability, business policies, or personal facts. Do not provide definitive medical, legal, or financial advice. Return only the suggested reply." }] },
-            contents: [{ role: "user", parts: [{ text: message }] }],
-            generationConfig: { maxOutputTokens: 220, temperature: 0.5 }
-          })
-        });
-      } finally { clearTimeout(timer); }
+      const { response, data } = await generateGemini(env, message);
       if (!response.ok) {
         // Expose a safe diagnostic category, never the API key or raw provider response.
         let providerStatus = "";
         try {
-          const detail = await response.json();
+          const detail = data;
           providerStatus = String(detail?.error?.status || "").slice(0, 60);
         } catch {}
         const category = response.status === 429 ? "Gemini quota exceeded"
@@ -97,7 +147,6 @@ export default {
           : "Gemini provider error";
         return json(502, { error: category + " (provider HTTP " + response.status + (providerStatus ? ", " + providerStatus : "") + ")" });
       }
-      const data = await response.json();
       const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
       if (!reply) return json(502, { error: "No AI reply generated" });
       return json(200, { reply: reply.slice(0, 2000) });
