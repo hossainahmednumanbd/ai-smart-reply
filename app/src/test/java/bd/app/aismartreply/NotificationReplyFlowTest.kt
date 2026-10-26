@@ -25,13 +25,13 @@ class NotificationReplyFlowTest {
             ctx.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit()
         }
     }
-    private fun sbn(n: Notification, id: Int = 7) = StatusBarNotification(
-        "com.whatsapp", "com.whatsapp", id, null, 1000, 0, 0, n, Process.myUserHandle(), 5000L)
-    private fun styled(vararg messages: Notification.MessagingStyle.Message, id: Int = 7): StatusBarNotification {
+    private fun sbn(n: Notification, id: Int = 7, pkg: String = "com.whatsapp") = StatusBarNotification(
+        pkg, pkg, id, null, 1000, 0, 0, n, Process.myUserHandle(), 5000L)
+    private fun styled(vararg messages: Notification.MessagingStyle.Message, id: Int = 7, pkg: String = "com.whatsapp", chat: String = "one-chat"): StatusBarNotification {
         val style = Notification.MessagingStyle(owner)
         messages.forEach { style.addMessage(it) }
         return sbn(Notification.Builder(ctx, "messages").setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setShortcutId("one-chat").setStyle(style).build(), id)
+            .setShortcutId(chat).setStyle(style).build(), id, pkg)
     }
     private fun incoming(text: String, time: Long) = Notification.MessagingStyle.Message(text, time, peer)
     private fun outgoing(text: String, time: Long) = Notification.MessagingStyle.Message(text, time, null as Person?)
@@ -57,12 +57,13 @@ class NotificationReplyFlowTest {
         assertEquals("দাম দেখে জানাচ্ছি", ReplyRules.templateReply(listOf(
             ReplyRule("hi", "hi", "জি ভাই"), ReplyRule("price", "দাম", "দাম দেখে জানাচ্ছি")), latest.text, true, "সাধারণ উত্তর"))
     }
-    @Test fun sameTextWithNewSenderTimestampIsANewMessage() {
+    @Test fun repeatedTextWithChangingTimestampIsStillSuppressedForTenMinutes() {
         val first = NotificationMessageReader.read(styled(incoming("hi", 1000)))!!
         val next = NotificationMessageReader.read(styled(incoming("hi", 2000)))!!
         assertTrue(AutoReplyGuard.claim(ctx, first, 10000))
         assertFalse(AutoReplyGuard.claim(ctx, first, 10001))
-        assertTrue(AutoReplyGuard.claim(ctx, next, 10002))
+        assertFalse(AutoReplyGuard.claim(ctx, next, 10002))
+        assertTrue(AutoReplyGuard.claim(ctx, next, 610001))
     }
     @Test fun explicitSelfPersonIsNotAnIncomingMessage() {
         val ownMessage = Notification.MessagingStyle.Message("জি ভাই", 1000, owner)
@@ -76,12 +77,12 @@ class NotificationReplyFlowTest {
         val message = NotificationMessageReader.read(sbn(plain))!!
         AutoReplyGuard.markSent(ctx, message.route, "জি ভাই", 10000)
         assertTrue(AutoReplyGuard.isSentEcho(ctx, message, 10001))
-        assertFalse(AutoReplyGuard.isSentEcho(ctx, message.copy(route = "other-chat"), 10001))
+        assertTrue(AutoReplyGuard.isSentEcho(ctx, message.copy(route = "other-chat"), 10001))
     }
-    @Test fun realContactCanRepeatOurReplyWithAnExplicitIncomingSender() {
+    @Test fun returnedReplyIsAnEchoEvenWhenAnotherAccountReportsARealIncomingSender() {
         val message = NotificationMessageReader.read(styled(incoming("জি ভাই", 1000)))!!
         AutoReplyGuard.markSent(ctx, message.route, "জি ভাই", 10000)
-        assertFalse(AutoReplyGuard.isSentEcho(ctx, message, 10001))
+        assertTrue(AutoReplyGuard.isSentEcho(ctx, message, 10001))
     }
     @Test fun plainCurrentTextWinsOverJoinedBigText() {
         val n = Notification.Builder(ctx, "messages").setContentTitle("Contact").setContentText("দাম কত")
@@ -98,4 +99,53 @@ class NotificationReplyFlowTest {
         assertEquals("hi", ReplyStore.entries(ctx).single().message)
         controller.destroy()
     }
+    @Test fun personalBusinessRoundTripDoesNotProduceFiftyFallbackReplies() {
+        val rules = listOf(ReplyRule("vaiya", "Vaiya", "জি ভাই বলেন", exact = true))
+        val sent = mutableListOf<String>()
+        val first = NotificationMessageReader.read(styled(incoming("Vaiya", 1000), pkg = "com.whatsapp.w4b"))!!
+        assertTrue(AutoReplyGuard.claim(ctx, first, 10000))
+        val reply = ReplyRules.templateReply(rules, first.text, true, "আমি এখন অফলাইনে আছি")!!
+        sent.add(reply); AutoReplyGuard.markSent(ctx, first.route, reply, 10000)
+        for (i in 1..50) {
+            val echoed = NotificationMessageReader.read(styled(incoming(reply, 1000L + i),
+                pkg = if (i % 2 == 0) "com.whatsapp.w4b" else "com.whatsapp", id = 7 + i, chat = "chat-$i"))!!
+            if (!AutoReplyGuard.isSentEcho(ctx, echoed, 10000L + i) && AutoReplyGuard.claim(ctx, echoed, 10000L + i)) {
+                sent.add(ReplyRules.templateReply(rules, echoed.text, true, "আমি এখন অফলাইনে আছি")!!)
+            }
+        }
+        assertEquals(listOf("জি ভাই বলেন"), sent)
+    }
+    @Test fun echoDetectionNormalizesBidiPrefixAndWhitespace() {
+        val message = NotificationMessageReader.read(styled(incoming("জি ভাই বলেন", 1000)))!!
+        AutoReplyGuard.markSent(ctx, message.route, "জি ভাই বলেন", 10000)
+        val disguised = message.copy(text = "\u2068You:\u2069 জি   ভাই বলেন", route = "com.whatsapp.w4b|other|changed", timestamp = 2000)
+        assertTrue(AutoReplyGuard.isSentEcho(ctx, disguised, 10001))
+    }
+    @Test fun everyAutoModeSharesConversationPauseAndReplyRepeatLimit() {
+        ReplyStore.set(ctx, "auto", true)
+        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 10000))
+        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "দ্বিতীয় উত্তর", 10001))
+        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 80000))
+        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "দ্বিতীয় উত্তর", 80000))
+        assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-one", "প্রথম উত্তর", 610001))
+    }
+    @Test fun burstBreakerDisablesBothAutomaticModesBeforeSixthSend() {
+        ReplyStore.set(ctx, "auto", true); ReplyStore.set(ctx, "ai_auto", true)
+        for (i in 1..5) assertTrue(AutoReplyGuard.reserveAutoSend(ctx, "chat-$i", "reply-$i", 10000L + i))
+        assertFalse(AutoReplyGuard.reserveAutoSend(ctx, "chat-six", "reply-six", 10006))
+        assertFalse(ReplyStore.enabled(ctx, "auto")); assertFalse(ReplyStore.enabled(ctx, "ai_auto"))
+        assertTrue(ctx.getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).getString("status", "")!!.contains("বন্ধ"))
+    }
+    @Test fun safetyUpdateStopsAutoOnceAndPreservesCustomRules() {
+        val rules = listOf(ReplyRule("mine", "Vaiya", "জি ভাই বলেন", true))
+        ReplyPreferences.saveRules(ctx, rules)
+        ReplyStore.set(ctx, "auto", true); ReplyStore.set(ctx, "ai_auto", true)
+        assertTrue(AutoReplyGuard.installSafetyUpdate(ctx))
+        assertFalse(ReplyStore.enabled(ctx, "auto")); assertFalse(ReplyStore.enabled(ctx, "ai_auto"))
+        assertEquals(rules, ReplyPreferences.rules(ctx))
+        ReplyStore.set(ctx, "auto", true)
+        assertFalse(AutoReplyGuard.installSafetyUpdate(ctx))
+        assertTrue(ReplyStore.enabled(ctx, "auto"))
+    }
+
 }

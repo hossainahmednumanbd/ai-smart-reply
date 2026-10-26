@@ -60,43 +60,98 @@ object NotificationMessageReader {
     }
 }
 
-/** Persistent bounded hashes: callback repeats and RemoteInput echoes cannot send a second reply. */
+/** Conservative installation-wide loop protection, including Personal <-> Business account echoes. */
 object AutoReplyGuard {
     private const val PREF = "auto_reply_guard_v1"
-    private const val ECHO_TTL = 120000L
+    private const val ECHO_TTL = 600000L
+    private const val CHAT_PAUSE = 60000L
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+    private fun clean(text: String) = ReplyRules.normalize(text
+        .replace(Regex("[\\u200B\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]"), "")
+        .replace(Regex("^(?:You|আপনি|Me)\\s*:\\s*", RegexOption.IGNORE_CASE), ""))
+    private fun scope(message: NotificationMessage) = message.route.split('|').take(2).joinToString("|")
+    private fun status(ctx: Context, text: String) {
+        ctx.getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit().putString("status", text).apply()
+    }
+    /** Updates must not silently resume automatic sending after the reported runaway loop. */
+    @Synchronized fun installSafetyUpdate(ctx: Context): Boolean {
+        val p = prefs(ctx)
+        if (p.getBoolean("control_safety_033", false)) return false
+        ctx.getSharedPreferences("reply_settings", Context.MODE_PRIVATE).edit()
+            .putBoolean("auto", false).putBoolean("ai_auto", false).commit()
+        p.edit().putBoolean("control_safety_033", true).commit()
+        status(ctx, "সুরক্ষা আপডেট: অটো বন্ধ রাখা হয়েছে। নিয়ম যাচাই করে নিজে চালু করুন।")
+        return true
+    }
     @Synchronized fun claim(ctx: Context, message: NotificationMessage, now: Long = System.currentTimeMillis()): Boolean {
         val p = prefs(ctx)
-        val key = "event_" + message.fingerprint
-        val ttl = if (message.structured) 86400000L else 60000L
-        val previous = p.getLong(key, 0L)
-        if (previous > 0 && now - previous in 0 until ttl) return false
+        val eventKey = "event_" + message.fingerprint
+        // A repost may have a new timestamp/notification ID. Content is also deduplicated.
+        val contentKey = "content_" + digest(scope(message) + "|" + clean(message.sender) + "|" + clean(message.text))
+        val eventAt = p.getLong(eventKey, 0L)
+        val contentAt = p.getLong(contentKey, 0L)
+        if ((eventAt > 0 && now - eventAt in 0 until 86400000L) ||
+            (contentAt > 0 && now - contentAt in 0 until ECHO_TTL)) return false
         prune(ctx, now)
-        p.edit().putLong(key, now).apply()
+        p.edit().putLong(eventKey, now).putLong(contentKey, now).apply()
         return true
     }
     fun isSentEcho(ctx: Context, message: NotificationMessage, now: Long = System.currentTimeMillis()): Boolean {
-        // Explicit incoming sender/timestamp is authoritative, even when a contact repeats our words.
-        if (message.structured) return false
-        val text = message.text.replace(Regex("^(?:You|আপনি)\\s*:\\s*", RegexOption.IGNORE_CASE), "")
-        val key = "sent_" + digest(message.route + "|" + ReplyRules.normalize(text))
-        val sentAt = prefs(ctx).getLong(key, 0L)
-        return sentAt > 0 && now - sentAt in 0 until ECHO_TTL
+        // A reply can return as an actual incoming message in another enabled account.
+        // Sender metadata and a new timestamp do not prove it came from a human.
+        val p = prefs(ctx)
+        val echoAt = p.getLong("echo_" + digest(clean(message.text)), 0L)
+        if (echoAt > 0 && now - echoAt in 0 until ECHO_TTL) return true
+        val oldAt = p.getLong("sent_" + digest(message.route + "|" + clean(message.text)), 0L)
+        return oldAt > 0 && now - oldAt in 0 until ECHO_TTL
+    }
+    /** Last gate for every automatic send, shared by templates, custom rules and AI. */
+    @Synchronized fun reserveAutoSend(ctx: Context, route: String, reply: String, now: Long = System.currentTimeMillis()): Boolean {
+        if (!ReplyStore.enabled(ctx, "auto") && !ReplyStore.enabled(ctx, "ai_auto")) return false
+        val p = prefs(ctx)
+        val chatKey = "chat_" + digest(route)
+        val replyKey = "reply_" + digest(route + "|" + clean(reply))
+        val lastChat = p.getLong(chatKey, 0L)
+        val lastReply = p.getLong(replyKey, 0L)
+        if (lastReply > 0 && now - lastReply in 0 until ECHO_TTL) {
+            status(ctx, "একই অটো উত্তর ১০ মিনিটে পুনরাবৃত্তি হওয়ায় পাঠানো হয়নি"); return false
+        }
+        if (lastChat > 0 && now - lastChat in 0 until CHAT_PAUSE) {
+            status(ctx, "এই চ্যাটে এক মিনিটের অটো রিপ্লাই বিরতি চলছে"); return false
+        }
+        val start = p.getLong("control_burst_start", 0L)
+        val count = if (start > 0 && now - start in 0 until 60000L) p.getLong("control_burst_count", 0L) else 0L
+        if (count >= 5L) {
+            ctx.getSharedPreferences("reply_settings", Context.MODE_PRIVATE).edit()
+                .putBoolean("auto", false).putBoolean("ai_auto", false).commit()
+            status(ctx, "দ্রুত পুনরাবৃত্তি ধরা পড়ায় সুরক্ষার জন্য সব অটো রিপ্লাই বন্ধ হয়েছে")
+            AutoReplyService.sync(ctx)
+            return false
+        }
+        p.edit().putLong(chatKey, now).putLong(replyKey, now)
+            .putLong("control_burst_start", if (count == 0L) now else start)
+            .putLong("control_burst_count", count + 1L).commit()
+        return true
     }
     @Synchronized fun markSent(ctx: Context, route: String, reply: String, now: Long = System.currentTimeMillis()): String {
         prune(ctx, now)
-        val key = "sent_" + digest(route + "|" + ReplyRules.normalize(reply))
-        prefs(ctx).edit().putLong(key, now).apply()
+        val key = "sent_" + digest(route + "|" + clean(reply))
+        // Global across all enabled messaging packages, before dispatching RemoteInput.
+        prefs(ctx).edit().putLong(key, now).putLong("echo_" + digest(clean(reply)), now).commit()
         return key
     }
-    fun forgetSent(ctx: Context, marker: String) { prefs(ctx).edit().remove(marker).apply() }
+    fun forgetSent(ctx: Context, marker: String) {
+        // Retain the global echo marker conservatively after an uncertain send attempt.
+        prefs(ctx).edit().remove(marker).apply()
+    }
     private fun prune(ctx: Context, now: Long) {
         val p = prefs(ctx); val edit = p.edit()
-        p.all.entries.sortedByDescending { (it.value as? Long) ?: 0L }.forEachIndexed { i, entry ->
-            val time = (entry.value as? Long) ?: 0L
-            val ttl = if (entry.key.startsWith("sent_")) ECHO_TTL else 86400000L
-            if (i >= 199 || now - time >= ttl || time > now) edit.remove(entry.key)
-        }
+        p.all.entries.filterNot { it.key.startsWith("control_") }
+            .sortedByDescending { (it.value as? Long) ?: 0L }.forEachIndexed { i, entry ->
+                val time = (entry.value as? Long) ?: 0L
+                val ttl = if (entry.key.startsWith("event_")) 86400000L else ECHO_TTL
+                if (i >= 499 || now - time >= ttl || time > now) edit.remove(entry.key)
+            }
         edit.apply()
     }
 }

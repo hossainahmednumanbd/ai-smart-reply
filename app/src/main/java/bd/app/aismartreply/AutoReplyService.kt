@@ -39,6 +39,7 @@ class AutoReplyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AutoReplyGuard.installSafetyUpdate(this)
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(NotificationChannel(CHANNEL,
             "AI অটো রিপ্লাই", NotificationManager.IMPORTANCE_LOW))

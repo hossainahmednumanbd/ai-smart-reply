@@ -51,6 +51,7 @@ class ReplyListener : NotificationListenerService() {
             val sbn = try { listener.activeNotifications?.firstOrNull { it.key == key } } catch (_: Exception) { null } ?: return false
             val action = actionFor(sbn.notification) ?: return false
             if (expectedFingerprint != null && NotificationMessageReader.read(sbn)?.fingerprint != expectedFingerprint) return false
+            if (expectedFingerprint != null && !AutoReplyGuard.reserveAutoSend(ctx, NotificationMessageReader.route(sbn), reply)) return false
             // Mark before dispatch because the app can repost its notification synchronously.
             val sentMarker = AutoReplyGuard.markSent(ctx, NotificationMessageReader.route(sbn), reply)
             return try {
@@ -70,6 +71,7 @@ class ReplyListener : NotificationListenerService() {
         }
         @Volatile private var instance: ReplyListener? = null
     }
+    override fun onCreate() { super.onCreate(); AutoReplyGuard.installSafetyUpdate(this) }
     override fun onListenerConnected() { super.onListenerConnected(); instance = this }
     override fun onListenerDisconnected() {
         instance = null
@@ -93,8 +95,8 @@ class ReplyListener : NotificationListenerService() {
             if (fixed != null) {
                 if (!AutoReplyGuard.claim(this, incoming)) return
                 val sent = send(this, sbn.key, fixed, incoming.fingerprint)
-                getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit()
-                    .putString("status", if (sent) "নিজের নিয়ম অনুযায়ী উত্তর পাঠানোর অনুরোধ সফল" else "নিয়ম মিলেছে; সক্রিয় মেসেজ বদলে যাওয়ায় বা Reply action ব্যর্থ হওয়ায় পাঠানো হয়নি").apply()
+                if (sent) getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE).edit()
+                    .putString("status", "নিজের নিয়ম অনুযায়ী উত্তর পাঠানোর অনুরোধ সফল").apply()
                 return
             }
             val state = getSharedPreferences("ai_auto_state", Context.MODE_PRIVATE)
@@ -126,8 +128,8 @@ class ReplyListener : NotificationListenerService() {
                             send(this, sbn.key, reply, incoming.fingerprint)) {
                             state.edit().putLong("last_sent", System.currentTimeMillis())
                                 .putString("status", "অটো রিপ্লাই পাঠানোর অনুরোধ সফল").apply()
-                        } else {
-                            state.edit().putString("status", "পাঠানো হয়নি: মোড, বিরতি বা সক্রিয় Reply নোটিফিকেশন পরীক্ষা করুন").apply()
+                        } else if (ReplyStore.enabled(this, "ai_auto")) {
+                            state.edit().putString("status", "পাঠানো হয়নি: বিরতি বা সক্রিয় Reply নোটিফিকেশন পরীক্ষা করুন").apply()
                         }
                     } finally { if (wakeLock.isHeld) wakeLock.release() }
                 }

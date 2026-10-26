@@ -59,7 +59,7 @@ class MainActivity : Activity() {
             nm.isNotificationListenerAccessGranted(ComponentName(this, ReplyListener::class.java))
         else Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); render() }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); AutoReplyGuard.installSafetyUpdate(this); render() }
     override fun onResume() {
         super.onResume()
         if (hasAccess()) ReplyListener.reconnect(this)
@@ -505,6 +505,7 @@ class MainActivity : Activity() {
             }
         }
         modes.addView(space(10))
+        modes.addView(label("লুপ সুরক্ষা: এই অ্যাপের পাঠানো লেখায় ১০ মিনিট অটো উত্তর নয়, একই লেখা ১০ মিনিটে একবার, একই চ্যাটে এক মিনিট বিরতি। এক মিনিটে ৫টি অটো পাঠানোর চেষ্টার পর পরের চেষ্টায় অটো নিজে বন্ধ হবে। অন্য অ্যাকাউন্ট থেকে একই লেখা ফিরলেও বাদ যাবে।", 12f, muted))
         modes.addView(label(if (AutoReplyService.running) "✓ ব্যাকগ্রাউন্ড সেবা চালু" else "ব্যাকগ্রাউন্ড সেবা বন্ধ", 13f, muted))
         modes.addView(label(if (ReplyListener.connected()) "✓ মেসেজ নোটিফিকেশন সংযুক্ত" else "মেসেজ নোটিফিকেশন সংযোগ অপেক্ষায়", 13f, muted))
         val lastState = getSharedPreferences("ai_auto_state", MODE_PRIVATE).getString("status", "").orEmpty()
