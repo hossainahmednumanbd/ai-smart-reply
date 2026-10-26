@@ -3,6 +3,7 @@ package bd.app.aismartreply
 import android.app.Notification
 import android.content.Context
 import androidx.core.app.NotificationCompat
+import android.os.Build
 import android.service.notification.StatusBarNotification
 import java.security.MessageDigest
 
@@ -33,8 +34,14 @@ object NotificationMessageReader {
             run {
                 val authorPerson = latest.person
                 val user = style.user
-                if ((!authorPerson?.key.isNullOrBlank() && authorPerson?.key == user.key) ||
-                    (!authorPerson?.uri.isNullOrBlank() && authorPerson?.uri == user.uri)) return null
+                // Framework MessagingStyle stores the full owner Person separately from
+                // the compatibility display-name bundle. Keep its stable identity when present.
+                val frameworkUser = if (Build.VERSION.SDK_INT >= 28)
+                    runCatching { extras.getParcelable<android.app.Person>("android.messagingUser") }.getOrNull() else null
+                val userKey = if (Build.VERSION.SDK_INT >= 28) frameworkUser?.key ?: user.key else user.key
+                val userUri = if (Build.VERSION.SDK_INT >= 28) frameworkUser?.uri ?: user.uri else user.uri
+                if ((!authorPerson?.key.isNullOrBlank() && authorPerson?.key == userKey) ||
+                    (!authorPerson?.uri.isNullOrBlank() && authorPerson?.uri == userUri)) return null
             }
             val text = latest.text?.toString()?.trim().orEmpty()
             if (text.isBlank() || text.length > 2000) return null
