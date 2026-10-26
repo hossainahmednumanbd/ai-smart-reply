@@ -1,17 +1,44 @@
 # AI Smart Reply Cloudflare Worker
 
-Source: `cloudflare-worker/worker.js`. A GitHub commit does **not** automatically update the live Cloudflare Worker until Git deployment is connected.
+Deployment entrypoint: `cloudflare-worker/src/index.js`.
+Wrangler configuration: `wrangler.jsonc` at the repository root.
 
-Existing Worker name: `wandering-waterfall-20ai-smart-reply-backend`.
+## Existing production Worker
 
-Configure on the existing Worker:
-- Cloudflare **Secret** `GEMINI_API_KEY` (never commit the value)
-- Cloudflare **Variable** `GOOGLE_WEB_CLIENT_ID` = `656908487206-i6u8rt2jck0a5k9cbbc9v6pbr5ee2cab.apps.googleusercontent.com`
-- Optional variable `GEMINI_MODEL` = `gemini-2.5-flash`
-- D1 binding `DB` with table `usage(bucket TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)`
+- Worker: `wandering-waterfall-20ai-smart-reply-backend`
+- D1 binding: `DB`, using the existing `ai-smart-reply-db` database
+- Google login: retain the existing runtime `GOOGLE_WEB_CLIENT_ID`
+- Gemini: retain the existing runtime secret `GEMINI_API_KEY`
+- Optional model override: retain the existing runtime `GEMINI_MODEL`
 
-Endpoints: `GET /health` checks that the Worker is running; `POST /reply` requires a valid signed Google ID token and JSON `{"message":"..."}`. A successful health check does not prove Gemini is configured.
+The configuration uses `keep_vars: true` to preserve dashboard variables.
+Do not copy secret values into this repository or into build variables.
+The deploy does not run database migrations, create databases, or change Google OAuth settings.
 
-For mobile-friendly deployment, connect the **existing** Worker to GitHub in Cloudflare > Workers & Pages > Worker > Settings > Builds > Connect. Use repository `hossainahmednumanbd/ai-smart-reply`, root directory `cloudflare-worker`, and ensure Wrangler's `name` matches the existing Worker. A Wrangler D1 configuration needs the actual database ID from Cloudflare; never guess it. Preserve the existing secrets and bindings.
+## Cloudflare Builds
 
-Start with manual replies and test before enabling auto replies. Gemini free tier can have rate limits and the model may be unavailable for some accounts. Never expose API keys.
+Connect the existing Worker to `hossainahmednumanbd/ai-smart-reply`:
+
+- Production branch: `main`
+- Root directory: `/`
+- Build command: empty (None)
+- Deploy command: `npx wrangler deploy`
+- Disable builds: off, with changes saved
+
+A new commit on the connected branch triggers a build when builds are enabled.
+Saving the settings alone may not deploy an older commit.
+Check the Cloudflare build logs and active deployment before assuming the code is live.
+The Android GitHub Actions build is separate and does not deploy this Worker.
+
+## Verification
+
+- `GET /health` should return HTTP 200 and `{"status":"ok"}`.
+- `POST /reply` requires a valid Google ID token and JSON `{"message":"..."}`.
+- The existing D1 database must have a `usage` table with `bucket TEXT PRIMARY KEY`
+  and `count INTEGER NOT NULL DEFAULT 0`.
+- A health response alone does not verify Google login, D1 queries, or Gemini.
+- After deploying, use the Android app to request one manual AI reply.
+  If HTTP 502 persists, capture the safe error message. The entrypoint distinguishes
+  Gemini quota, access, model, request, and provider failures without returning the API key.
+
+The other Worker files in this repository are not used by the root deployment configuration.
