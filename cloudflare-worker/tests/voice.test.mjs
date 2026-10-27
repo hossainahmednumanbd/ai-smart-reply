@@ -37,6 +37,15 @@ try{
  await test('incomplete blocked and empty provider results are rejected',()=>{
   for(const result of [{},{candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'half'}]}}]},{candidates:[{finishReason:'STOP',content:{parts:[]}}]}])assert.throws(()=>voiceText(result));
  });
+ await test('a retired model is replaced using authenticated model discovery',async()=>{
+  const before=globalThis.fetch;
+  globalThis.fetch=async(url)=>{
+   if(String(url).includes('/models?pageSize'))return Response.json({models:[{name:'models/gemini-9-flash',supportedGenerationMethods:['generateContent']}]});
+   if(String(url).includes('gemini-9-flash:'))return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'সম্পূর্ণ কথা'}]}}]});
+   return new Response('{}',{status:404});
+  };
+  try{const response=await handleVoice(request(audio),env(),'one');assert.equal(response.status,200);assert.equal((await response.json()).text,'সম্পূর্ণ কথা');}finally{globalThis.fetch=before;}
+ });
  await test('provider failure exposes no secret and keeps retry possible',async()=>{
   const before=globalThis.fetch;globalThis.fetch=async()=>new Response('private detail',{status:403});
   try{const response=await handleVoice(request(audio),env(),'one');assert.equal(response.status,502);assert.doesNotMatch(await response.text(),/test-only|private detail/);}finally{globalThis.fetch=before;}

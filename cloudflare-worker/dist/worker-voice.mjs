@@ -2,6 +2,7 @@
 const handleVoice = (() => {
 // Isolated Voice Writer route. Does not use reply prompts or consume reply quota.
 const MAX_BYTES = 6_100_000;
+let resolvedVoiceModel;
 const json = (status, body) => Response.json(body, {status, headers:{'cache-control':'no-store'}});
 async function voiceBody(request) {
   if (Number(request.headers.get('content-length') || 0) > MAX_BYTES) throw Error('too_large');
@@ -55,9 +56,28 @@ async function handleVoice(request,env,userId) {
     const body=JSON.stringify({contents:[{role:'user',parts}],generationConfig:{temperature:0.1,maxOutputTokens:16384}});
     const generate=name=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(name)+':generateContent',{
       method:'POST',signal:controller.signal,headers:{'content-type':'application/json','x-goog-api-key':env.GEMINI_API_KEY},body});
-    let response=await generate(configured);
-    // Missing-model fallback is isolated from the existing reply model cache.
-    if(response.status===404 && configured!=='gemini-2.5-flash')response=await generate('gemini-2.5-flash');
+    const cached=resolvedVoiceModel;
+    const selected=cached && cached.key===env.GEMINI_API_KEY && cached.configured===configured && cached.expires>Date.now()?cached.model:configured;
+    let response=await generate(selected);
+    // Discover available models only for missing-model errors, never quota or auth failures.
+    if(response.status===404) {
+      await response.body?.cancel();resolvedVoiceModel=undefined;
+      const listing=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',{
+        signal:controller.signal,headers:{'x-goog-api-key':env.GEMINI_API_KEY}});
+      if(!listing.ok)return json(502,{error:'Voice model discovery unavailable'});
+      const data=await listing.json();
+      const candidates=(Array.isArray(data.models)?data.models:[])
+        .filter(m=>m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m=>String(m.name).replace(/^models\//,''))
+        .filter(name=>/^gemini-[a-z0-9.-]+$/.test(name) && name.includes('flash') && !/image|audio|tts|live|native|robotics|computer-use/.test(name) && name!==selected)
+        .sort((a,b)=>Number(/preview|exp-/.test(a))-Number(/preview|exp-/.test(b)) || b.localeCompare(a,'en',{numeric:true}));
+      for(const model of candidates.slice(0,2)) {
+        response=await generate(model);
+        if(response.ok)resolvedVoiceModel={key:env.GEMINI_API_KEY,configured,model,expires:Date.now()+3600000};
+        if(response.status!==404)break;
+        await response.body?.cancel();
+      }
+    }
     if(!response.ok)return json(response.status===429?429:502,{error:response.status===429?'Voice provider quota exceeded':'Voice provider unavailable (HTTP '+response.status+')'});
     const data=await response.json();
     try {return json(200,{text:voiceText(data)});}
