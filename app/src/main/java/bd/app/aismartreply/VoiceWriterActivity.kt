@@ -16,6 +16,9 @@ import android.os.Looper
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.EditText
+import android.widget.Spinner
+import android.widget.ArrayAdapter
 import android.view.Gravity
 
 /** Opt-in voice capture screen. Does not interact with automatic replies. */
@@ -24,6 +27,8 @@ class VoiceWriterActivity : Activity() {
     private val transcript = VoiceTranscriptBuffer()
     private lateinit var status: TextView
     private lateinit var output: TextView
+    private lateinit var apiKey: EditText
+    private lateinit var mode: Spinner
     private var listening = false
     private var finishing = false
     private val handler = Handler(Looper.getMainLooper())
@@ -40,6 +45,10 @@ class VoiceWriterActivity : Activity() {
         output = TextView(this).apply { textSize = 17f; minHeight = 180 }
         layout.addView(status)
         layout.addView(output)
+        mode = Spinner(this).apply { adapter = ArrayAdapter(this@VoiceWriterActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Original", "Refine", "Learner")) }
+        layout.addView(mode)
+        apiKey = EditText(this).apply { hint = "Gemini API Key (Refine / Learner)"; inputType = 129; setSingleLine(true) }
+        layout.addView(apiKey)
         layout.addView(Button(this).apply { text = "কথা বলা শুরু করুন"; setOnClickListener { startListening() } })
         layout.addView(Button(this).apply { text = "শেষ করুন ও কপি করুন"; setOnClickListener { finishAndCopy() } })
         layout.addView(Button(this).apply { text = "বাতিল"; setOnClickListener { finish() } })
@@ -98,8 +107,32 @@ class VoiceWriterActivity : Activity() {
             recognizer?.stopListening()
             listening = false
             status.text = "শেষ অংশ সংগ্রহ করছি..."
-            handler.postDelayed({ copyConfirmed() }, 1300)
-        } else copyConfirmed()
+            handler.postDelayed({ refineAndCopy() }, 1300)
+        } else refineAndCopy()
+    }
+
+    private fun refineAndCopy() {
+        val raw = transcript.snapshot()
+        if (raw.isBlank()) { status.text = "কোনো নিশ্চিত লেখা পাওয়া যায়নি; আবার চেষ্টা করুন"; return }
+        val selected = when (mode.selectedItemPosition) {
+            1 -> VoiceRefiner.Mode.REFINE
+            2 -> VoiceRefiner.Mode.LEARNER
+            else -> VoiceRefiner.Mode.ORIGINAL
+        }
+        status.text = if (selected == VoiceRefiner.Mode.ORIGINAL) "কপি করছি..." else "AI দিয়ে Refine করা হচ্ছে..."
+        VoiceRefiner.refine(raw, selected, apiKey.text.toString().trim()) { result ->
+            result.onSuccess { copyText(it) }.onFailure {
+                status.text = "Refine ব্যর্থ: ${it.message}. মূল লেখা সংরক্ষিত আছে।"
+                output.text = raw
+            }
+        }
+    }
+
+    private fun copyText(text: String) {
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+            .setPrimaryClip(ClipData.newPlainText("Voice Writer", text))
+        status.text = "লেখা কপি হয়েছে। অন্য অ্যাপে পেস্ট করুন।"
+        output.text = text
     }
 
     private fun copyConfirmed() {
