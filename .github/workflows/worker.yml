@@ -10,6 +10,8 @@ on:
       - 'wrangler.jsonc'
       - 'cloudflare-worker/**'
       - 'scripts/check_worker_deploy_access.py'
+      - 'scripts/configure_voice_key.py'
+      - 'scripts/inspect_worker_models.py'
       - 'scripts/verify_worker_live.py'
   push:
     branches: [main, feature/floating-voice-writer]
@@ -20,6 +22,8 @@ on:
       - 'wrangler.jsonc'
       - 'cloudflare-worker/**'
       - 'scripts/check_worker_deploy_access.py'
+      - 'scripts/configure_voice_key.py'
+      - 'scripts/inspect_worker_models.py'
       - 'scripts/verify_worker_live.py'
 permissions:
   contents: read

@@ -47,7 +47,7 @@ def main():
         f"https://api.cloudflare.com/client/v4/accounts/{account}/workers/scripts/{worker}/secrets",
         "PUT", {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"]},
         {"name": "VOICE_GEMINI_API_KEY", "text": key, "type": "secret_text"})
-    if code != 200 or not result.get("success"):
+    if code not in (200, 201) or not result.get("success"):
         raise SystemExit(f"Cannot save dedicated Worker voice key: HTTP {code}")
     print("Dedicated Worker voice key saved after successful Gemini test. Auto Reply key unchanged.", flush=True)
 
