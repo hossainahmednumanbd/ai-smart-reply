@@ -24,6 +24,8 @@ class MainActivity : Activity() {
     private val dark = Color.rgb(18, 32, 62)
     private val muted = Color.rgb(105, 116, 136)
     private val bg = Color.rgb(246, 249, 255)
+    private var voicePlayback: android.media.MediaPlayer? = null
+    private var voiceStatusLabel: TextView? = null
     private var pendingVoiceOverlay = false
     private var page = "home"
     private lateinit var column: LinearLayout
@@ -33,6 +35,8 @@ class MainActivity : Activity() {
     private val statusHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val statusRefresh = object : Runnable {
         override fun run() {
+            voiceStatusLabel?.text = if (VoiceOverlayService.recording) "● রেকর্ড হচ্ছে" else if (VoiceOverlayService.running) "● চালু" else "○ বন্ধ"
+            voiceStatusLabel?.setTextColor(if (VoiceOverlayService.running) Color.rgb(0, 160, 70) else muted)
             connectionLabel?.text = if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা চলছে"
             connectionDetails?.text = ReplyListener.connectionDetail(this@MainActivity)
             statusHandler.postDelayed(this, 1500L)
@@ -70,8 +74,12 @@ class MainActivity : Activity() {
             nm.isNotificationListenerAccessGranted(ComponentName(this, ReplyListener::class.java))
         else Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); pendingVoiceOverlay = savedInstanceState?.getBoolean("pending_voice_overlay") ?: false; AutoReplyGuard.installSafetyUpdate(this); render() }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); if (intent.getBooleanExtra("open_smart_audio", false)) page = "smart_audio"; pendingVoiceOverlay = savedInstanceState?.getBoolean("pending_voice_overlay") ?: false; AutoReplyGuard.installSafetyUpdate(this); render() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("pending_voice_overlay", pendingVoiceOverlay); super.onSaveInstanceState(outState) }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent); setIntent(intent)
+        if (intent.getBooleanExtra("open_smart_audio", false)) { page = "smart_audio"; render() }
+    }
     override fun onResume() {
         super.onResume()
         if (pendingVoiceOverlay) {
@@ -84,7 +92,7 @@ class MainActivity : Activity() {
         render()
         statusHandler.removeCallbacks(statusRefresh); statusHandler.post(statusRefresh)
     }
-    override fun onPause() { statusHandler.removeCallbacks(statusRefresh); super.onPause() }
+    override fun onPause() { stopVoicePlayback(); statusHandler.removeCallbacks(statusRefresh); super.onPause() }
     @Deprecated("Google Sign-In activity result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -101,7 +109,9 @@ class MainActivity : Activity() {
             render()
         }
     }
+    private fun stopVoicePlayback() { voicePlayback?.release(); voicePlayback = null }
     private fun render() {
+        voiceStatusLabel = null
         connectionLabel = null; connectionDetails = null;
         val root = vertical().apply {
             setBackgroundColor(bg)
@@ -139,7 +149,7 @@ class MainActivity : Activity() {
             "templates" -> templates()
             "settings" -> settingsPage()
             "training" -> trainingPage()
-            "facebook" -> facebookPage()
+            "smart_audio" -> smartAudioPage()
         }
     }
     private fun heading(title: String, subtitle: String = "") {
@@ -167,14 +177,6 @@ class MainActivity : Activity() {
         val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
         heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
-        val voiceCard = card()
-        voiceCard.addView(action("🎙 কথা বলে লিখুন", { startActivity(Intent(this, VoiceWriterActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, false))
-        voiceCard.addView(space(6))
-        val voiceControls = horizontal()
-        voiceControls.addView(action("ভাসমান বাটন চালু", { requestVoiceOverlay() }, false), LinearLayout.LayoutParams(0, -2, 1f))
-        voiceControls.addView(space(6))
-        voiceControls.addView(action("বন্ধ", { stopService(Intent(this, VoiceOverlayService::class.java)) }, false), LinearLayout.LayoutParams(0, -2, 1f))
-        voiceCard.addView(voiceControls); addCard(voiceCard)
         val signedIn = GoogleAuth.account(this)
         val accountCard = card()
         accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
@@ -190,14 +192,14 @@ class MainActivity : Activity() {
         banner.addView(label("AI দিয়ে দ্রুত ও স্মার্টভাবে উত্তর দিন", 15f, Color.WHITE))
         column.addView(banner); column.addView(space(17))
         val apps = horizontal()
-        listOf(Triple("f", "Facebook", false), Triple("◉", "WhatsApp", ReplyStore.enabled(this, "allow_com.whatsapp")),
+        listOf(Triple("≋", "Smart Audio", VoiceOverlayService.running), Triple("◉", "WhatsApp", ReplyStore.enabled(this, "allow_com.whatsapp")),
             Triple("ϟ", "Messenger", ReplyStore.enabled(this, "allow_com.facebook.orca"))).forEachIndexed { index, (symbol, name, active) ->
             val tile = card().apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(16), dp(4), dp(16)) }
             tile.addView(label(symbol, 34f, if (index == 1) Color.rgb(0, 195, 89) else blue, true).apply { gravity = Gravity.CENTER })
             tile.addView(space(8))
             tile.addView(label(name, 13f, dark, true).apply { gravity = Gravity.CENTER })
-            tile.addView(label(if (active) "● চালু" else "○ বন্ধ", 12f, if (active) Color.rgb(0, 160, 70) else muted).apply { gravity = Gravity.CENTER })
-            tile.setOnClickListener { page = if (index == 0) "facebook" else "settings"; render() }
+            tile.addView(label(if (active) "● চালু" else "○ বন্ধ", 12f, if (active) Color.rgb(0, 160, 70) else muted).apply { gravity = Gravity.CENTER; if (index == 0) voiceStatusLabel = this })
+            tile.setOnClickListener { page = if (index == 0) "smart_audio" else "settings"; render() }
             apps.addView(tile, LinearLayout.LayoutParams(0, dp(132), 1f).apply { marginEnd = dp(if (index == 2) 0 else 7) })
         }
         column.addView(apps); column.addView(space(10))
@@ -215,7 +217,7 @@ class MainActivity : Activity() {
         menuCard("✦", "AI নির্দেশনা ও ব্যবসার তথ্য", "নিজের ভাষা, তথ্য ও নমুনা উত্তর সেট করুন") { page = "training"; render() }
         menuCard("▣", "নিজের রিপ্লাই নিয়ম", "কোন মেসেজে কোন উত্তর যাবে ঠিক করুন") { page = "templates"; render() }
         menuCard("⚙", "সেটিংস", "ডিভাইস, অ্যাপ ও রিপ্লাই নিয়ন্ত্রণ") { page = "settings"; render() }
-        column.addView(label("নোট: Facebook ব্যক্তিগত ইনবক্সের সরাসরি সংযোগ নেই। WhatsApp ও Messenger-এর অনুমোদিত Android নোটিফিকেশন ব্যবহার করা হয়।", 12f, muted))
+        column.addView(label("WhatsApp ও Messenger-এর অনুমোদিত Android নোটিফিকেশন ব্যবহার করা হয়।", 12f, muted))
     }
     private fun menuCard(icon: String, title: String, subtitle: String, click: () -> Unit) {
         val tile = card()
@@ -424,16 +426,86 @@ class MainActivity : Activity() {
             Toast.makeText(this, "সংরক্ষিত। পরের AI উত্তরে ব্যবহার হবে।", Toast.LENGTH_LONG).show()
         }))
     }
-    private fun facebookPage() {
-        heading("Facebook Page কমেন্ট", "Meta সংযোগ এখনো করা হয়নি")
-        val tile = card()
-        tile.addView(label("নিজের পরিচালিত Page-এর কমেন্ট", 18f, dark, true))
-        tile.addView(space(8))
-        tile.addView(label("Page-এর কমেন্টে AI উত্তর দিতে Meta App, Page অনুমতি, সার্ভারের webhook ও access token সংযোগ প্রয়োজন। অন্য ব্যবহারকারীর Page যুক্ত করতে Meta App Review লাগতে পারে। ব্যক্তিগত প্রোফাইলের কমেন্ট এখানে যুক্ত নেই।", 15f))
-        tile.addView(space(10))
-        tile.addView(label("এখন কোনো Facebook কমেন্ট পড়া বা স্বয়ংক্রিয়ভাবে পোস্ট করা হচ্ছে না।", 14f, muted))
-        addCard(tile)
+    private fun smartAudioPage() {
+        column.addView(action("‹ হোম", { page = "home"; render() }, false))
+        column.addView(space(12))
+        heading("Smart Audio", "কথা বলুন, লেখা তৈরি করুন, কপি করে পেস্ট করুন")
+        val prefs = getSharedPreferences("voice_writer", MODE_PRIVATE)
+        val control = card()
+        control.addView(label(if (VoiceOverlayService.recording) "● রেকর্ড হচ্ছে" else if (VoiceOverlayService.running) "● ভাসমান বাটন চালু" else "○ ভাসমান বাটন বন্ধ", 18f, blue, true))
+        control.addView(space(8))
+        control.addView(label("ছোট ≋ বাটনটি যেকোনো অ্যাপের ওপর থাকবে। চাপলে রেকর্ডিং বার আসবে। ✓ দিয়ে শেষ করুন, ✕ দিয়ে বাতিল করুন।", 15f, muted))
+        control.addView(space(10))
+        control.addView(action("ভাসমান বাটন চালু করুন", { requestVoiceOverlay() }))
+        control.addView(space(8))
+        control.addView(action("ভাসমান বাটন বন্ধ করুন", { stopService(Intent(this, VoiceOverlayService::class.java)); statusHandler.postDelayed({ render() }, 100) }, false))
+        addCard(control)
+        val permissions = card()
+        permissions.addView(label("প্রয়োজনীয় অনুমতি", 18f, dark, true))
+        permissions.addView(label(if (Settings.canDrawOverlays(this)) "✓ অন্য অ্যাপের ওপর দেখানোর অনুমতি আছে" else "○ অন্য অ্যাপের ওপর দেখানোর অনুমতি প্রয়োজন", 14f, muted))
+        permissions.addView(label(if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) "✓ মাইক্রোফোনের অনুমতি আছে" else "○ মাইক্রোফোনের অনুমতি প্রয়োজন", 14f, muted))
+        permissions.addView(action("মাইক্রোফোনের অনুমতি", { startActivity(Intent(this, VoiceWriterActivity::class.java).putExtra("permission_only", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, false))
+        permissions.addView(space(6))
+        permissions.addView(action("নোটিফিকেশনের অনুমতি", {
+            if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 8403)
+        }, false))
+        addCard(permissions)
+        val modes = card()
+        modes.addView(label("লেখার ধরন", 18f, dark, true))
+        val choices = listOf("refine", "original", "learner")
+        val spinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Refine • বানান ও বাক্য সাজান", "Original • মূল কথা", "Learner • সহজ বাংলা"))
+            setSelection(choices.indexOf(prefs.getString("mode", "refine")).coerceAtLeast(0))
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { prefs.edit().putString("mode", choices[position]).apply() }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+        }
+        modes.addView(spinner)
+        modes.addView(label("লেখার বাক্সে BN/EN থেকে ভাষা বদলানো, কপি, আবার তৈরি এবং শেয়ার করা যাবে। Google লগইন ব্যবহার হবে; API key লাগবে না।", 14f, muted))
+        addCard(modes)
+        val saved = card()
+        saved.addView(label("শেষ অডিও ও লেখা", 18f, dark, true))
+        saved.addView(action("শেষ লেখা দেখুন", {
+            if (!Settings.canDrawOverlays(this)) requestVoiceOverlay()
+            else startForegroundService(Intent(this, VoiceOverlayService::class.java).setAction(VoiceOverlayService.ACTION_RESULT))
+        }, false))
+        saved.addView(space(6))
+        saved.addView(action("রাখা অডিও থেকে আবার তৈরি করুন", {
+            if (!Settings.canDrawOverlays(this)) requestVoiceOverlay()
+            else startForegroundService(Intent(this, VoiceOverlayService::class.java).setAction(VoiceOverlayService.ACTION_RETRY))
+        }, false))
+        saved.addView(space(6))
+        saved.addView(action("রাখা অডিও শুনুন", {
+            val audio = java.io.File(noBackupFilesDir, "voice-writer/pending.m4a")
+            if (!audio.exists()) Toast.makeText(this, "রাখা অডিও নেই", Toast.LENGTH_SHORT).show()
+            else {
+                stopVoicePlayback()
+                val player = android.media.MediaPlayer(); voicePlayback = player
+                runCatching {
+                    player.setDataSource(audio.absolutePath); player.prepare(); player.start()
+                    val dialog = AlertDialog.Builder(this).setTitle("Smart Audio অডিও চলছে")
+                        .setPositiveButton("বন্ধ করুন", null).create()
+                    dialog.setOnDismissListener { if (voicePlayback === player) stopVoicePlayback() }
+                    player.setOnCompletionListener { dialog.dismiss() }
+                    dialog.show()
+                }.onFailure { stopVoicePlayback(); Toast.makeText(this, "অডিও চালানো যায়নি", Toast.LENGTH_SHORT).show() }
+            }
+        }, false))
+        saved.addView(space(6))
+        saved.addView(action("রাখা অডিও ও লেখা মুছুন", {
+            AlertDialog.Builder(this).setTitle("Smart Audio-এর রাখা অডিও ও লেখা মুছবেন?")
+                .setPositiveButton("মুছুন") { _, _ ->
+                    stopService(Intent(this, VoiceOverlayService::class.java))
+                    listOf("pending.m4a", "draft.txt", "edited.txt").forEach { java.io.File(noBackupFilesDir, "voice-writer/$it").delete() }
+                    prefs.edit().putBoolean("pending_processed", false).apply()
+                    Toast.makeText(this, "Smart Audio-এর রাখা তথ্য মোছা হয়েছে", Toast.LENGTH_SHORT).show()
+                }.setNegativeButton("রাখুন", null).show()
+        }, false))
+        addCard(saved)
+        column.addView(label("রেকর্ডিংয়ের সময় মাইক্রোফোনের নোটিফিকেশন থাকবে। সর্বোচ্চ ১০ মিনিট। অডিও থেকে লেখা তৈরিতে ইন্টারনেট লাগবে। সার্ভার ব্যর্থ হলে অডিও রাখা থাকবে।", 13f, muted))
     }
+
     private fun reportReply() {
         val last = getSharedPreferences("ai_output", MODE_PRIVATE).getString("last_reply", "").orEmpty()
         if (last.isEmpty()) { Toast.makeText(this, "আগে একটি AI উত্তর তৈরি করুন", Toast.LENGTH_LONG).show(); return }

@@ -19,6 +19,11 @@ try{
   const text='বাংলা বক্তব্য '.repeat(800);const parts=voiceParts({operation:'refine',mode:'refine',text});
   assert.ok(parts[0].text.endsWith(text));assert.match(parts[0].text,/Never answer/);
  });
+ await test('English result toggle translates without conflicting Bengali-only instruction',()=>{
+  const parts=voiceParts({operation:'refine',mode:'english',text:'আমার নাম হোসাইন ১২৩'});
+  assert.match(parts[0].text,/Translate into clear English/);assert.match(parts[0].text,/Return only English text/);
+  assert.doesNotMatch(parts[0].text,/Return only Bengali text/);assert.match(parts[0].text,/১২৩/);
+ });
  await test('invalid and oversized input is rejected before spending quota',async()=>{
   const e=env(),before=providerCalls;
   for(const body of [{...audio,audio:'!!=='},{...audio,mimeType:'video/mp4'},{operation:'refine',mode:'bad',text:'text'},{operation:'refine',mode:'refine',text:'x'.repeat(40001)}])assert.equal((await handleVoice(request(body),e,'one')).status,400);

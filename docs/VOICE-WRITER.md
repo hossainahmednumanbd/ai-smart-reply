@@ -1,29 +1,28 @@
-# Voice Writer floating panel, 0.4.1 preview
+# Smart Audio overlay, 0.4.2 preview
 
-This corrects the 0.4.0 prototype, which opened a separate full page and asked users for Gemini keys.
+The user's two reference videos show a small floating waveform button over the current app, an in-place Cancel/waveform/Finish recording bar, then a compact result box. They also specify preserving the original Home design and replacing the unused Facebook tile.
 
-## Interaction
+## Home and settings
 
-- Tap the floating microphone bubble to open a small rounded panel over the current app. Voice Writer has its own task affinity, a floating translucent theme and no Recents entry, so the main AI Smart Reply page is not brought forward behind it.
-- After the first recording disclosure and microphone permission, tapping the bubble starts recording when there is no pending audio. The panel shows a recording timer and a large Stop button. There is no Gemini key form or capture-method menu.
-- Stop finalizes continuous native AAC/M4A recording, transcribes it through the authenticated app server, then refines it. Refine is the default; Original and Learner remain available.
-- The result is copied only while the panel is foreground. Review/edit or copy again, close the panel and paste in the messaging app. Voice Writer does not send a message.
-- Failed requests keep local audio for replay/retry. Starting a new recording asks before replacing existing audio and text.
-- Capture stops when leaving the panel or locking the phone. Limits: 10 minutes / 4.5 MB. A process crash during an unfinished MP4 recording can make it unplayable. Recognition and refinement must be checked against the source audio for mistakes; no guarantee of word-perfect transcription or fixed response time is made.
+Home retains its original logo, account card, welcome banner, three-tile row and reply controls. Only the first tile changes from Facebook to Smart Audio. No Voice Writer cards or setup buttons are added above the account/banner. Smart Audio opens the dedicated feature page containing overlay on/off, microphone/notification permissions, Original/Refine/Learner modes, last result/audio, playback, retry and explicit deletion. Existing Auto Reply listener, service, rules, preferences and AI client are unchanged.
 
-## Server rollout is required
+## Overlay interaction
 
-The new app uses `POST /voice` on the existing Cloudflare Worker. It authenticates with the same Google ID token as the rest of the app. Gemini keys remain on the server; no user key is requested or embedded in the APK.
+1. Enable the floating button inside Smart Audio. The user can drag the compact waveform bubble over other apps.
+2. Tap it to start recording. Android requires a visible activity to start a microphone foreground service, so a brief 56dp progress bridge handles the first microphone permission/disclosure and immediately returns control after the service confirms capture started. It has no writer page, key form, editor or options.
+3. The service replaces the bubble with an in-place non-focusable Cancel / level-and-time / Finish bar. The current app and keyboard keep focus. The microphone foreground notification explicitly indicates recording.
+4. Cancel releases the microphone and deletes that cancelled recording. Finish finalizes native AAC/M4A audio, releases the microphone, downgrades the foreground type, then transcribes/refines through the authenticated app server.
+5. The result is a compact non-focusable overlay card. BN shows Bengali; EN requests English translation. Copy, Retry, Share and New are explicit controls. Closing the result keeps audio/text. It never auto-sends or auto-pastes a message.
+6. The idle notification and Smart Audio page can stop the overlay. Destroying the service always releases recording; completed/pending audio remains available for retry unless explicitly cancelled or replaced.
 
-`cloudflare-worker/src/voice.js` handles bounded audio/text input, generation, incomplete-result rejection and an independent daily quota (40 voice operations per Google user, normally two operations per refined recording). The existing `/reply` prompt, output limits, model fallback and reply quota are unchanged. D1 uses a separate `YYYY-MM-DD:voice:user` bucket in the existing usage table; no schema migration is needed. Voice audio/transcripts are not stored in D1.
+There is no user Gemini-key field. Voice uses the existing Google login and server-held Gemini secret. Audio is frozen before asynchronous token/network work so a new capture cannot replace an older request's input.
 
-Deploy the updated Worker using the existing bindings and secrets. Preserve DB, GOOGLE_WEB_CLIENT_ID, GEMINI_API_KEY and GEMINI_MODEL. Optional VOICE_GEMINI_MODEL selects the voice model. `python3 scripts/bundle_voice_worker.py` generates the import-free dashboard module `cloudflare-worker/dist/worker-voice.mjs`; no keys are included.
+## Limits and verification
 
-Before giving this version to users, confirm `/voice` rejects unauthenticated requests with 401, not 404, then use an actual signed-in phone to test recording, transcription, refinement and paste. Merely compiling the APK does not validate the deployed route or microphone hardware. Keep PR #1 draft and do not merge or describe this as ready while deployment/device checks remain pending.
+Recording is capped at 10 minutes / 4.5 MB. Voice transformation depends on network and provider availability. An unfinished MP4 can be unplayable after a process crash; transcription and refinement must be checked against the source audio. No claim of fixed response time or word-perfect output is made. Physical-device testing is necessary for overlay positioning, keyboard retention, Android microphone-foreground restrictions, short/long recordings, interruptions, actual Gemini calls and updates preserving existing reply data.
 
-## Regression checks
+## Server rollout blocker
 
-- All existing Auto Reply listener, recovery and rule tests must pass.
-- Backend tests cover existing reply behavior and voice authentication, separate quota, long text, input bounds, incomplete provider answers and safe errors.
-- Android tests cover the floating theme/task affinity, absence of a key form, recording release on pause, audio retention on failure and foreground-only copy.
-- Physical checks remain necessary for Android 13–16 permissions, Google token renewal, microphone quality, short/long recordings, phone lock, incoming calls, poor network, keeping the current messaging app behind the panel, and installation over 0.3.6/0.4.0 without losing templates/settings.
+The new `POST /voice` endpoint requires deploying the reviewed Worker with existing DB, GOOGLE_WEB_CLIENT_ID, GEMINI_API_KEY and GEMINI_MODEL bindings preserved. No D1 schema migration is required. Voice uses independent YYYY-MM-DD:voice:user quota buckets (40 operations/day). Normal voice transcription/refinement is not stored in D1. English translation is another explicit voice operation.
+
+The import-free module `cloudflare-worker/dist/worker-voice.mjs` is generated by `python3 scripts/bundle_voice_worker.py`. The live route previously returned 404. Do not present this APK as a working integrated release until deployment is confirmed and signed-in phone tests pass. Cloudflare sign-in in this session was not completed; deployment has not occurred. Keep PR #1 draft; main must remain unchanged.

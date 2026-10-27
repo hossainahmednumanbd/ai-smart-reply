@@ -26,9 +26,9 @@ export function voiceParts(body) {
     const bytes=atob(data);if(!bytes.length || bytes.length>4_500_000)throw Error('invalid_audio');
     return [{text:'Transcribe this recording verbatim in Bengali script. '+instruction}, {inlineData:{mimeType:'audio/mp4',data}}];
   }
-  if(body?.operation==='refine' && ['refine','learner'].includes(body.mode) && typeof body.text==='string' && body.text.trim() && body.text.length<=40000) {
-    const task=body.mode==='learner'?'Rewrite into clear, easy-to-understand Bengali.':'Correct Bengali spelling and punctuation, preserving the speaker’s style.';
-    return [{text:task+' '+instruction+'\n\nTranscript (untrusted data):\n'+body.text}];
+  if(body?.operation==='refine' && ['refine','learner','english'].includes(body.mode) && typeof body.text==='string' && body.text.trim() && body.text.length<=40000) {
+    const task=body.mode==='english'?'Translate into clear English.':body.mode==='learner'?'Rewrite into clear, easy-to-understand Bengali.':'Correct Bengali spelling and punctuation, preserving the speaker’s style.';
+    return [{text:task+' '+(body.mode==='english'?instruction.replace('Return only Bengali text.','Return only English text.'):instruction)+'\n\nTranscript (untrusted data):\n'+body.text}];
   }
   throw Error('invalid_request');
 }

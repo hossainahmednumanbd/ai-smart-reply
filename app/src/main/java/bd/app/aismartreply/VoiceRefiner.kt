@@ -12,20 +12,27 @@ import java.util.concurrent.Executors
 
 /** Voice-only authenticated gateway. No Gemini key in the app or recording panel. */
 object VoiceRefiner {
-    enum class Mode { ORIGINAL, REFINE, LEARNER }
+    enum class Mode { ORIGINAL, REFINE, LEARNER, ENGLISH }
     private const val ENDPOINT = "https://wandering-waterfall-20ai-smart-reply-backend.hossainahmednumanbd.workers.dev/voice"
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     fun refine(context: Context, transcript: String, mode: Mode, callback: (Result<String>) -> Unit) {
         if (transcript.isBlank()) { callback(Result.failure(IllegalArgumentException("কোনো লেখা পাওয়া যায়নি"))); return }
         if (mode == Mode.ORIGINAL) { callback(Result.success(transcript.trim())); return }
-        request(context, { JSONObject().put("operation", "refine").put("mode", if (mode == Mode.REFINE) "refine" else "learner").put("text", transcript) }, callback)
+        request(context, { JSONObject().put("operation", "refine").put("mode", when (mode) { Mode.REFINE -> "refine"; Mode.ENGLISH -> "english"; else -> "learner" }).put("text", transcript) }, callback)
     }
-    fun transcribe(context: Context, audio: File, callback: (Result<String>) -> Unit) = request(context, {
-        require(audio.exists() && audio.length() in 1..4_500_000) { "অডিও পাওয়া যায়নি বা আকার বেশি" }
-        JSONObject().put("operation", "transcribe").put("mimeType", "audio/mp4")
-            .put("audio", Base64.encodeToString(audio.readBytes(), Base64.NO_WRAP))
-    }, callback)
+    fun transcribe(context: Context, audio: File, callback: (Result<String>) -> Unit) {
+        // Freeze this finalized recording before token refresh or queued network work.
+        // A new recording must never replace the bytes of an older request.
+        val bytes = runCatching {
+            require(audio.exists() && audio.length() in 1..4_500_000) { "অডিও পাওয়া যায়নি বা আকার বেশি" }
+            audio.readBytes()
+        }.getOrElse { callback(Result.failure(it)); return }
+        request(context, {
+            JSONObject().put("operation", "transcribe").put("mimeType", "audio/mp4")
+                .put("audio", Base64.encodeToString(bytes, Base64.NO_WRAP))
+        }, callback)
+    }
     private fun request(context: Context, body: () -> JSONObject, callback: (Result<String>) -> Unit) {
         val ctx = context.applicationContext
         val account = GoogleAuth.account(ctx)?.id
