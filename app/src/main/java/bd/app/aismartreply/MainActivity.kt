@@ -146,6 +146,7 @@ class MainActivity : Activity() {
         val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
         heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
+        column.addView(action("🎙 Voice Writer (পরীক্ষামূলক)", { startActivity(Intent(this, VoiceWriterActivity::class.java)) }, false))
         val signedIn = GoogleAuth.account(this)
         val accountCard = card()
         accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
