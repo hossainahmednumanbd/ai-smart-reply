@@ -74,7 +74,7 @@ class MainActivity : Activity() {
             nm.isNotificationListenerAccessGranted(ComponentName(this, ReplyListener::class.java))
         else Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); if (intent.getBooleanExtra("open_smart_audio", false)) page = "smart_audio"; pendingVoiceOverlay = savedInstanceState?.getBoolean("pending_voice_overlay") ?: false; AutoReplyGuard.installSafetyUpdate(this); render() }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); if (intent.getBooleanExtra("open_smart_audio", false)) page = "smart_audio"; pendingVoiceOverlay = savedInstanceState?.getBoolean("pending_voice_overlay") ?: false; AutoReplyGuard.installSafetyUpdate(this); render(); if (savedInstanceState == null) AppUpdates.check(this) }
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("pending_voice_overlay", pendingVoiceOverlay); super.onSaveInstanceState(outState) }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
@@ -693,6 +693,7 @@ class MainActivity : Activity() {
                 }.show()
         }, false))
         addCard(notice)
+        column.addView(action("অ্যাপের নতুন আপডেট দেখুন", { AppUpdates.check(this, manual = true) }, false))
         column.addView(action("✓ সেটিংস সংরক্ষিত হয় স্বয়ংক্রিয়ভাবে", { Toast.makeText(this, "সেটিংস সংরক্ষিত আছে", Toast.LENGTH_SHORT).show() }))
     }
 }

@@ -65,3 +65,21 @@ jobs:
           name: ai-smart-reply-play-bundle
           path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
+  publish-preview:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/floating-voice-writer' && contains(github.event.head_commit.message, '[publish-preview]')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ai-smart-reply-signed-apk
+          path: release-apk
+      - name: Publish tested preview update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: python3 scripts/publish_android_update.py
