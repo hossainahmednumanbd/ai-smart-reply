@@ -1,19 +1,19 @@
-# Smart Audio overlay, 0.4.2 preview
+# smart voice writer overlay, 0.4.3 preview
 
 The user's two reference videos show a small floating waveform button over the current app, an in-place Cancel/waveform/Finish recording bar, then a compact result box. They also specify preserving the original Home design and replacing the unused Facebook tile.
 
 ## Home and settings
 
-Home retains its original logo, account card, welcome banner, three-tile row and reply controls. Only the first tile changes from Facebook to Smart Audio. No Voice Writer cards or setup buttons are added above the account/banner. Smart Audio opens the dedicated feature page containing overlay on/off, microphone/notification permissions, Original/Refine/Learner modes, last result/audio, playback, retry and explicit deletion. Existing Auto Reply listener, service, rules, preferences and AI client are unchanged.
+Home retains its original logo, account card, welcome banner, three-tile row and reply controls. Only the first tile changes from Facebook to smart voice writer. No Voice Writer cards or setup buttons are added above the account/banner. smart voice writer opens the dedicated feature page containing overlay on/off, microphone/notification permissions, Original/Refine/Learner modes, last result/audio, playback, retry and explicit deletion. Existing Auto Reply listener, service, rules, preferences and AI client are unchanged.
 
 ## Overlay interaction
 
-1. Enable the floating button inside Smart Audio. The user can drag the compact waveform bubble over other apps.
+1. Enable the floating button inside smart voice writer. The user can drag the compact waveform bubble over other apps.
 2. Tap it to start recording. Android requires a visible activity to start a microphone foreground service, so a brief 56dp progress bridge handles the first microphone permission/disclosure and immediately returns control after the service confirms capture started. It has no writer page, key form, editor or options.
 3. The service replaces the bubble with an in-place non-focusable Cancel / level-and-time / Finish bar. The current app and keyboard keep focus. The microphone foreground notification explicitly indicates recording.
 4. Cancel releases the microphone and deletes that cancelled recording. Finish finalizes native AAC/M4A audio, releases the microphone, downgrades the foreground type, then transcribes/refines through the authenticated app server.
 5. The result is a compact non-focusable overlay card. BN shows Bengali; EN requests English translation. Copy, Retry, Share and New are explicit controls. Closing the result keeps audio/text. It never auto-sends or auto-pastes a message.
-6. The idle notification and Smart Audio page can stop the overlay. Destroying the service always releases recording; completed/pending audio remains available for retry unless explicitly cancelled or replaced.
+6. The idle notification and smart voice writer page can stop the overlay. Destroying the service always releases recording; completed/pending audio remains available for retry unless explicitly cancelled or replaced.
 
 There is no user Gemini-key field. Voice uses the existing Google login and server-held Gemini secret. Audio is frozen before asynchronous token/network work so a new capture cannot replace an older request's input.
 

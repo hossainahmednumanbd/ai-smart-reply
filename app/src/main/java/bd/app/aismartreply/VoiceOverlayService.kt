@@ -68,7 +68,7 @@ class VoiceOverlayService : Service() {
         super.onCreate()
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
         manager = getSystemService(WINDOW_SERVICE) as WindowManager
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(NotificationChannel(CHANNEL, "Smart Audio", NotificationManager.IMPORTANCE_LOW))
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(NotificationChannel(CHANNEL, "smart voice writer", NotificationManager.IMPORTANCE_LOW))
         if (!foreground(false)) { stopSelf(); return }
         running = true
         original = runCatching { draft.readText() }.getOrDefault("")
@@ -80,7 +80,7 @@ class VoiceOverlayService : Service() {
         val stop = PendingIntent.getService(this, 1, Intent(this, VoiceOverlayService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java).putExtra("open_smart_audio", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(if (microphone) "Smart Audio • রেকর্ড হচ্ছে" else "Smart Audio")
+            .setContentTitle(if (microphone) "smart voice writer • রেকর্ড হচ্ছে" else "smart voice writer")
             .setContentText(if (microphone) "ভাসমান বারে ✓ দিয়ে শেষ বা ✕ দিয়ে বাতিল করুন" else "ভাসমান বাটন চালু আছে")
             .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "Stop", stop).build()).build()
         if (Build.VERSION.SDK_INT >= 34) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or (if (microphone) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0))
@@ -129,12 +129,12 @@ class VoiceOverlayService : Service() {
         if (busy || recorder != null) return
         runCatching { startActivity(Intent(this, VoiceWriterActivity::class.java)
             .putExtra("replace_pending", replacePending).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
-            .onFailure { showResult("মাইক্রোফোন চালু করতে Smart Audio খুলুন।") }
+            .onFailure { showResult("মাইক্রোফোন চালু করতে smart voice writer খুলুন।") }
     }
     private fun showIdle() {
         val view = object : TextView(this) { override fun performClick(): Boolean { super.performClick(); return true } }.apply {
             text = "≋"; textSize = 27f; gravity = Gravity.CENTER; setTextColor(Color.rgb(135, 112, 179))
-            contentDescription = "Smart Audio: কথা বলে লিখুন"; background = shape(Color.rgb(249, 248, 252))
+            contentDescription = "smart voice writer: কথা বলে লিখুন"; background = shape(Color.rgb(249, 248, 252))
         }
         attach(view, 44, 44); drag(view) { launchCapture() }
     }
@@ -161,7 +161,7 @@ class VoiceOverlayService : Service() {
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(button("BN", "বাংলা লেখা দেখুন") { displayed = bengali; showResult() }, LinearLayout.LayoutParams(dp(48), dp(40)))
         header.addView(button("EN", "ইংরেজি অনুবাদ করুন") { translateEnglish() }, LinearLayout.LayoutParams(dp(48), dp(40)))
-        val grip = text("Smart Audio", 11f); header.addView(grip, LinearLayout.LayoutParams(0, dp(40), 1f)); drag(grip)
+        val grip = text("smart voice writer", 11f); header.addView(grip, LinearLayout.LayoutParams(0, dp(40), 1f)); drag(grip)
         header.addView(button("✕", "লেখা রেখে বাক্স বন্ধ করুন") { showIdle() }, LinearLayout.LayoutParams(dp(42), dp(40)))
         root.addView(header)
         val content = text(if (displayed.isBlank()) "লেখা এখনো তৈরি হয়নি" else displayed, 17f)
@@ -179,7 +179,7 @@ class VoiceOverlayService : Service() {
         if (busy || recorder != null) return
         if (!Settings.canDrawOverlays(this)) return
         if (audio.exists() && !prefs.getBoolean("pending_processed", false) && !replacePending) { showResult("আগের অডিও আছে। ↻ চাপুন অথবা নতুন রেকর্ডিং বেছে নিন।"); return }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !foreground(true)) { showResult("মাইক্রোফোন অনুমতি পাওয়া যায়নি। Smart Audio থেকে অনুমতি দিন।"); return }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !foreground(true)) { showResult("মাইক্রোফোন অনুমতি পাওয়া যায়নি। smart voice writer থেকে অনুমতি দিন।"); return }
         try {
             audio.parentFile?.mkdirs()
             val instance = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else MediaRecorder(); recorder = instance
@@ -241,13 +241,13 @@ class VoiceOverlayService : Service() {
     private fun saveDraft() { runCatching { draft.parentFile?.mkdirs(); draft.writeText(original); edited.writeText(bengali) } }
     private fun copyText() {
         if (busy || recorder != null || displayed.isBlank()) return
-        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Smart Audio", displayed))
+        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("smart voice writer", displayed))
         Toast.makeText(this, "লেখা কপি হয়েছে। পেস্ট করুন।", Toast.LENGTH_SHORT).show()
     }
     private fun shareText() {
         if (displayed.isBlank() || busy) return
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, displayed)
-        runCatching { startActivity(Intent.createChooser(send, "Smart Audio লেখা শেয়ার").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        runCatching { startActivity(Intent.createChooser(send, "smart voice writer লেখা শেয়ার").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
     @Suppress("DEPRECATION")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -44,7 +44,7 @@ class VoiceWriterActivity : Activity() {
         val prefs = getSharedPreferences("voice_writer", MODE_PRIVATE)
         if (!prefs.getBoolean("recording_notice_accepted", false)) {
             requested = true
-            AlertDialog.Builder(this).setTitle("Smart Audio")
+            AlertDialog.Builder(this).setTitle("smart voice writer")
                 .setMessage("আপনার চাপ দেওয়ার পর মাইক্রোফোনে কথা রেকর্ড হবে। ✓ চাপলে অ্যাপের সার্ভার ও Google Gemini দিয়ে বাংলা লেখা তৈরি হবে। ✕ চাপলে রেকর্ডিং বাতিল হবে।")
                 .setPositiveButton("শুরু করুন") { _, _ -> prefs.edit().putBoolean("recording_notice_accepted", true).apply(); beginOverlayCapture() }
                 .setNegativeButton("পরে") { _, _ -> finish() }.setOnCancelListener { finish() }.show()
@@ -69,7 +69,7 @@ class VoiceWriterActivity : Activity() {
             requested = false
             if (visible) prepare() // Otherwise onResume performs the visible start.
         } else if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
-            AlertDialog.Builder(this).setMessage("Smart Audio-এর জন্য App Settings থেকে মাইক্রোফোন অনুমতি দিন।")
+            AlertDialog.Builder(this).setMessage("smart voice writer-এর জন্য App Settings থেকে মাইক্রোফোন অনুমতি দিন।")
                 .setPositiveButton("Settings") { _, _ -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))); finish() }
                 .setNegativeButton("পরে") { _, _ -> finish() }.setOnCancelListener { finish() }.show()
         } else finish()

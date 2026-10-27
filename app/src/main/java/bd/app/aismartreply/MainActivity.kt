@@ -192,12 +192,12 @@ class MainActivity : Activity() {
         banner.addView(label("AI দিয়ে দ্রুত ও স্মার্টভাবে উত্তর দিন", 15f, Color.WHITE))
         column.addView(banner); column.addView(space(17))
         val apps = horizontal()
-        listOf(Triple("≋", "Smart Audio", VoiceOverlayService.running), Triple("◉", "WhatsApp", ReplyStore.enabled(this, "allow_com.whatsapp")),
+        listOf(Triple("≋", "smart voice writer", VoiceOverlayService.running), Triple("◉", "WhatsApp", ReplyStore.enabled(this, "allow_com.whatsapp")),
             Triple("ϟ", "Messenger", ReplyStore.enabled(this, "allow_com.facebook.orca"))).forEachIndexed { index, (symbol, name, active) ->
             val tile = card().apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(16), dp(4), dp(16)) }
             tile.addView(label(symbol, 34f, if (index == 1) Color.rgb(0, 195, 89) else blue, true).apply { gravity = Gravity.CENTER })
             tile.addView(space(8))
-            tile.addView(label(name, 13f, dark, true).apply { gravity = Gravity.CENTER })
+            tile.addView(label(name, if (index == 0) 12f else 13f, dark, true).apply { gravity = Gravity.CENTER; maxLines = 2 })
             tile.addView(label(if (active) "● চালু" else "○ বন্ধ", 12f, if (active) Color.rgb(0, 160, 70) else muted).apply { gravity = Gravity.CENTER; if (index == 0) voiceStatusLabel = this })
             tile.setOnClickListener { page = if (index == 0) "smart_audio" else "settings"; render() }
             apps.addView(tile, LinearLayout.LayoutParams(0, dp(132), 1f).apply { marginEnd = dp(if (index == 2) 0 else 7) })
@@ -429,7 +429,7 @@ class MainActivity : Activity() {
     private fun smartAudioPage() {
         column.addView(action("‹ হোম", { page = "home"; render() }, false))
         column.addView(space(12))
-        heading("Smart Audio", "কথা বলুন, লেখা তৈরি করুন, কপি করে পেস্ট করুন")
+        heading("smart voice writer", "কথা বলুন, লেখা তৈরি করুন, কপি করে পেস্ট করুন")
         val prefs = getSharedPreferences("voice_writer", MODE_PRIVATE)
         val control = card()
         control.addView(label(if (VoiceOverlayService.recording) "● রেকর্ড হচ্ছে" else if (VoiceOverlayService.running) "● ভাসমান বাটন চালু" else "○ ভাসমান বাটন বন্ধ", 18f, blue, true))
@@ -484,7 +484,7 @@ class MainActivity : Activity() {
                 val player = android.media.MediaPlayer(); voicePlayback = player
                 runCatching {
                     player.setDataSource(audio.absolutePath); player.prepare(); player.start()
-                    val dialog = AlertDialog.Builder(this).setTitle("Smart Audio অডিও চলছে")
+                    val dialog = AlertDialog.Builder(this).setTitle("smart voice writer অডিও চলছে")
                         .setPositiveButton("বন্ধ করুন", null).create()
                     dialog.setOnDismissListener { if (voicePlayback === player) stopVoicePlayback() }
                     player.setOnCompletionListener { dialog.dismiss() }
@@ -494,12 +494,12 @@ class MainActivity : Activity() {
         }, false))
         saved.addView(space(6))
         saved.addView(action("রাখা অডিও ও লেখা মুছুন", {
-            AlertDialog.Builder(this).setTitle("Smart Audio-এর রাখা অডিও ও লেখা মুছবেন?")
+            AlertDialog.Builder(this).setTitle("smart voice writer-এর রাখা অডিও ও লেখা মুছবেন?")
                 .setPositiveButton("মুছুন") { _, _ ->
                     stopService(Intent(this, VoiceOverlayService::class.java))
                     listOf("pending.m4a", "draft.txt", "edited.txt").forEach { java.io.File(noBackupFilesDir, "voice-writer/$it").delete() }
                     prefs.edit().putBoolean("pending_processed", false).apply()
-                    Toast.makeText(this, "Smart Audio-এর রাখা তথ্য মোছা হয়েছে", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "smart voice writer-এর রাখা তথ্য মোছা হয়েছে", Toast.LENGTH_SHORT).show()
                 }.setNegativeButton("রাখুন", null).show()
         }, false))
         addCard(saved)

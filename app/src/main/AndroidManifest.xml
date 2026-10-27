@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application android:label="AI Smart Reply" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true">
         <service android:name=".VoiceOverlayService" android:exported="false" android:foregroundServiceType="specialUse|microphone">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled Smart Audio overlay with explicit recording, cancel and stop controls"/>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled smart voice writer overlay with explicit recording, cancel and stop controls"/>
         </service>
         <activity android:name=".VoiceWriterActivity" android:exported="false" android:theme="@style/VoiceWriterPanel" android:taskAffinity="bd.app.aismartreply.voice" android:excludeFromRecents="true" android:launchMode="singleTask" android:configChanges="orientation|screenSize"/>
         <activity android:name=".MainActivity" android:exported="true">
