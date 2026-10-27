@@ -15,6 +15,18 @@ try{
   assert.match(providerBody.contents[0].parts[0].text,/verbatim/);assert.equal(providerBody.generationConfig.maxOutputTokens,16384);
   assert.ok([...e.counts.keys()][0].endsWith(':voice:one'));
  });
+ await test('voice does not inherit a legacy Auto Reply model with unavailable quota',async()=>{
+  const before=globalThis.fetch;let called;
+  globalThis.fetch=async(url)=>{called=String(url);return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'সম্পূর্ণ কথা'}]}}]});};
+  try{const e=env();e.GEMINI_MODEL='gemini-2.0-flash';
+   assert.equal((await handleVoice(request(audio),e,'one')).status,200);
+   assert.match(called,/gemini-2\.5-flash:generateContent$/);
+   assert.equal(e.GEMINI_MODEL,'gemini-2.0-flash');
+   e.VOICE_GEMINI_MODEL='gemini-2.5-flash-lite';
+   assert.equal((await handleVoice(request(audio),e,'one')).status,200);
+   assert.match(called,/gemini-2\.5-flash-lite:generateContent$/);
+  }finally{globalThis.fetch=before;}
+ });
  await test('refinement does not truncate long Bengali input or require user API keys',async()=>{
   const text='বাংলা বক্তব্য '.repeat(800);const parts=voiceParts({operation:'refine',mode:'refine',text});
   assert.ok(parts[0].text.endsWith(text));assert.match(parts[0].text,/Never answer/);

@@ -24,5 +24,6 @@ for name in ("GEMINI_MODEL", "VOICE_GEMINI_MODEL"):
     if value and re.fullmatch(r"(?:models/)?gemini-[a-zA-Z0-9.-]{1,100}", value):
         print(f"Deployed {name}: {value}")
     else:
-        print(f"Deployed {name}: absent or not a readable model name")
+        kind = binding.get("type", "missing")
+        print(f"Deployed {name}: absent or not a readable model name; binding type: {kind}")
 print("Gemini key binding present:", any(b.get("name") == "GEMINI_API_KEY" for b in bindings))

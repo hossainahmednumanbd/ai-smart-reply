@@ -52,7 +52,7 @@ async function handleVoice(request,env,userId) {
   } catch {return json(503,{error:'Voice usage database unavailable'});}
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),90000);
   try {
-    const configured=String(env.VOICE_GEMINI_MODEL || env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//,'');
+    const configured=String(env.VOICE_GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//,'');
     const body=JSON.stringify({contents:[{role:'user',parts}],generationConfig:{temperature:0.1,maxOutputTokens:16384}});
     const generate=name=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(name)+':generateContent',{
       method:'POST',signal:controller.signal,headers:{'content-type':'application/json','x-goog-api-key':env.GEMINI_API_KEY},body});

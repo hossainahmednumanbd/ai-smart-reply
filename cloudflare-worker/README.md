@@ -66,3 +66,5 @@ After a real deployment, `scripts/verify_worker_live.py` requires a health respo
 `voice_writer: true`, plus authenticated `/voice` and `/reply` route contracts (401 without a token).
 That verifies rollout and retained authentication, not a successful real Gemini request.
 Test with the signed-in Android app before claiming full voice integration is complete.
+
+Voice model selection is isolated: `VOICE_GEMINI_MODEL` overrides the voice default `gemini-2.5-flash`; voice never inherits the legacy `/reply` `GEMINI_MODEL`. A model listed with zero quota in AI Studio must not be assumed usable. Provider quota failures are still surfaced without changing model to bypass rate limits.
