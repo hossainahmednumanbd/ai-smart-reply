@@ -166,7 +166,7 @@ export default {
   async scheduled(_event, env, ctx) { ctx.waitUntil(cleanup(env.DB)); },
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/health" && request.method === "GET") return json(200, { status: "ok" });
+    if (url.pathname === "/health" && request.method === "GET") return json(200, { status: "ok", voice_writer: true });
     if (request.method === "GET" && ["/", "/privacy", "/delete-account"].includes(url.pathname)) return publicPage(url.pathname);
     if (!["/reply", "/feedback", "/account", "/voice"].includes(url.pathname)) return json(404, { error: "Not found" });
     const expectedMethod = url.pathname === "/account" ? "DELETE" : "POST";

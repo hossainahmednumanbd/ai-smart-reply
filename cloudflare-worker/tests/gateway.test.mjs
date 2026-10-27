@@ -64,6 +64,8 @@ try {
  });
  await test('voice route uses the existing Google login and rejects unauthenticated requests',async()=>{
   const db=database(),env=envFor(db);
+  const health=await worker.fetch(new Request('https://example.test/health'),{});
+  assert.equal(health.status,200);assert.equal((await health.json()).voice_writer,true);
   const body={operation:'transcribe',mimeType:'audio/mp4',audio:btoa('audio')};
   const unsigned=new Request('https://example.test/voice',{method:'POST',body:JSON.stringify(body)});
   assert.equal((await worker.fetch(unsigned,env)).status,401);
