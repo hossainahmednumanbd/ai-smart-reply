@@ -5,200 +5,129 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.*
 import android.content.pm.PackageManager
-import android.media.MediaRecorder
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
 import android.os.*
 import android.provider.Settings
-import android.speech.*
 import android.view.*
 import android.widget.*
 import java.io.File
 
-/** Visible, user-initiated capture only. No dependency on the Auto Reply pipeline. */
+/** Compact floating recording panel. The previous app remains visible behind it. */
 class VoiceWriterActivity : Activity() {
-    private var recognizer: SpeechRecognizer? = null
     private var recorder: MediaRecorder? = null
     private var player: MediaPlayer? = null
-    private val transcript = VoiceTranscriptBuffer()
-    private val session = VoiceCaptureSession()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
     private lateinit var output: EditText
-    private lateinit var apiKey: EditText
-    private lateinit var mode: Spinner
-    private lateinit var capture: Spinner
     private lateinit var start: Button
     private lateinit var done: Button
-    private lateinit var keys: VoiceKeyStore
-    private var continuous = false
-    private var busy = false
+    private lateinit var retry: Button
+    private lateinit var mode: Spinner
+    private lateinit var progress: ProgressBar
     private var resumed = false
-    private var pendingPermissionStart = false
-    private var requestGeneration = 0
+    private var busy = false
+    private var pendingStart = false
+    private var firstResume = true
+    private var generation = 0
+    private var startedAt = 0L
     private var rawText = ""
-    private var autoCopy = false
-    private var retries = 0
     private val audio by lazy { File(noBackupFilesDir, "voice-writer/pending.m4a") }
     private val draft by lazy { File(noBackupFilesDir, "voice-writer/draft.txt") }
     private val edited by lazy { File(noBackupFilesDir, "voice-writer/edited.txt") }
-    private val stopTimeout = Runnable { settleSpeech(session.generation, "শেষ অংশ নিশ্চিত হয়নি। লেখা যাচাই করুন।", true) }
-    private val restart = Runnable { if (continuous && resumed) startSegment() }
-    private val audioLimit = Runnable { stopAudio(); status.text = "১০ মিনিটের সীমায় রেকর্ডিং থেমেছে। অডিও থেকে লেখা তৈরি করুন।" }
-
+    private val timer = object : Runnable {
+        override fun run() {
+            if (recorder == null) return
+            val seconds = (SystemClock.elapsedRealtime() - startedAt) / 1000
+            status.text = "● রেকর্ড হচ্ছে  %02d:%02d".format(seconds / 60, seconds % 60)
+            handler.postDelayed(this, 1000)
+        }
+    }
+    private fun dp(value: Int) = (resources.displayMetrics.density * value).toInt()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setFinishOnTouchOutside(false)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        keys = VoiceKeyStore(this)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(24))
-            setBackgroundColor(android.graphics.Color.rgb(246, 249, 255))
-            setOnApplyWindowInsetsListener { view, insets ->
-                view.setPadding(dp(20), dp(16) + insets.systemWindowInsetTop, dp(20), dp(24) + insets.systemWindowInsetBottom)
-                insets
-            }
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(14))
+            background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(24).toFloat() }
         }
-        fun label(value: String, size: Float = 15f) = TextView(this).apply { text = value; textSize = size; setPadding(0, dp(6), 0, dp(6)) }
-        fun button(value: String, action: () -> Unit): Button = Button(this).also { b -> b.text = value; b.setOnClickListener { action() }; layout.addView(b) }
-        layout.addView(label("🎙 বাংলা Voice Writer", 24f))
-        layout.addView(label("শুধু আপনার লেখা তৈরি ও কপি করে। অন্য অ্যাপে পেস্ট করুন।"))
-        status = label("কথা বলার পদ্ধতি বেছে শুরু করুন", 17f); layout.addView(status)
-        capture = Spinner(this).apply { adapter = ArrayAdapter(this@VoiceWriterActivity, android.R.layout.simple_spinner_dropdown_item,
-            listOf("বাংলা Speech Recognition", "নিরবচ্ছিন্ন অডিও রেকর্ডিং + Gemini")) }
-        layout.addView(capture)
-        mode = Spinner(this).apply { adapter = ArrayAdapter(this@VoiceWriterActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Original: মূল কথা", "Refine: বানান ও যতিচিহ্ন", "Learner: সহজ বাংলা")) }
-        layout.addView(mode)
-        apiKey = EditText(this).apply {
-            hint = "আপনার Gemini API Key"; inputType = 129; setSingleLine(true)
-            isSaveEnabled = false; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            setText(keys.read())
+        fun text(value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(Color.rgb(18, 32, 62)); setPadding(0, dp(4), 0, dp(4)) }
+        val title = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        title.addView(text("🎙 কথা বলে লিখুন", 21f), LinearLayout.LayoutParams(0, -2, 1f))
+        title.addView(Button(this).apply { this.text = "✕"; contentDescription = "প্যানেল বন্ধ করুন"; setOnClickListener { finish() } }, LinearLayout.LayoutParams(dp(52), dp(48)))
+        root.addView(title)
+        status = text("কথা শেষ হলে ‘শেষ করুন’ চাপুন", 17f); root.addView(status)
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true; visibility = View.GONE }
+        root.addView(progress, LinearLayout.LayoutParams(-1, dp(4)))
+        mode = Spinner(this).apply { adapter = ArrayAdapter(this@VoiceWriterActivity, android.R.layout.simple_spinner_dropdown_item,
+            listOf("Refine • সুন্দর করে লিখুন", "Original • মূল কথা", "Learner • সহজ বাংলা")) }
+        root.addView(mode)
+        fun row() = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; root.addView(this) }
+        fun button(parent: LinearLayout, value: String, click: () -> Unit): Button = Button(this).also {
+            it.text = value; it.isAllCaps = false; it.setOnClickListener { click() }
+            parent.addView(it, LinearLayout.LayoutParams(0, dp(52), 1f))
         }
-        layout.addView(apiKey)
-        button("API Key সেভ করুন") {
-            runCatching { keys.save(apiKey.text.toString()) }.onSuccess { status.text = "Key ফোনে এনক্রিপ্ট করে রাখা হয়েছে" }
-                .onFailure { status.text = "Key সেভ হয়নি; আবার চেষ্টা করুন" }
-        }
-        button("সেভ করা Key মুছুন") { keys.clear(); apiKey.setText(""); status.text = "সেভ করা Key মুছে দেওয়া হয়েছে" }
-        layout.addView(label("Speech Recognition ফোনের speech service ব্যবহার করে। Refine ও অডিও থেকে লেখা তৈরিতে Google Gemini-তে তথ্য যাবে এবং আপনার API-র খরচ হতে পারে।"))
-        start = button("কথা বলা শুরু করুন") { begin() }
-        done = button("শেষ করুন ও লেখা তৈরি করুন") { finishCapture() }
+        val captureRow = row()
+        start = button(captureRow, "🎙 শুরু করুন") { begin() }
+        done = button(captureRow, "■ শেষ করুন") { finishCapture() }
         output = EditText(this).apply {
-            hint = "লেখা এখানে আসবে। কপি করার আগে সম্পাদনা করতে পারবেন।"; textSize = 17f
-            minLines = 5; gravity = Gravity.TOP; isSaveEnabled = false
+            textSize = 17f; gravity = Gravity.TOP; hint = "আপনার লেখা এখানে আসবে"; isSaveEnabled = false
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            visibility = View.GONE
         }
-        layout.addView(output)
-        button("লেখা যাচাই করে কপি করুন") { copyText(output.text.toString()) }
-        button("লেখা আবার Refine করুন") { if (!busy && recorder == null && !continuous && session.state == VoiceCaptureSession.State.IDLE) { rawText = output.text.toString(); saveDraft(); refineText() } }
-        button("মূল লেখা দেখুন") { if (!busy && !continuous && recorder == null && session.state == VoiceCaptureSession.State.IDLE) { output.setText(rawText); status.text = "মূল লেখা দেখানো হচ্ছে" } }
-        button("রাখা অডিও শুনুন / বন্ধ করুন") {
-            if (player != null) stopPlayback()
-            else if (!busy && recorder == null && !continuous && session.state == VoiceCaptureSession.State.IDLE) playAudio()
-        }
-        button("রাখা অডিও থেকে আবার লেখা তৈরি করুন") { if (!busy && recorder == null && !continuous && session.state == VoiceCaptureSession.State.IDLE) processAudio() }
-        button("নতুন লেখা / রেকর্ডিং মুছুন") {
-            if (!busy) AlertDialog.Builder(this).setTitle("এই লেখা ও রাখা অডিও মুছবেন?")
-                .setPositiveButton("মুছুন") { _, _ -> clearDraft() }.setNegativeButton("বাতিল", null).show()
-        }
-        button("ফিরে যান") { finish() }
-        setContentView(ScrollView(this).apply { isFillViewport = true; addView(layout) })
+        root.addView(output, LinearLayout.LayoutParams(-1, dp(140)))
+        val resultRow = row()
+        button(resultRow, "লেখা কপি করুন") { copyText(output.text.toString()) }
+        retry = button(resultRow, "আবার তৈরি করুন") { if (!busy && recorder == null) processAudio() }
+        val extraRow = row()
+        button(extraRow, "অডিও শুনুন") { if (player != null) stopPlayback() else if (!busy && recorder == null) playAudio() }
+        button(extraRow, "নতুন রেকর্ডিং") { newRecording() }
+        root.addView(text("আপনার কথাই লেখা হবে। শেষ করলে অডিও অ্যাপের সার্ভার হয়ে Google-এ যাবে। এখানে কোনো API key দিতে হবে না।", 12f))
+        setContentView(ScrollView(this).apply { addView(root) })
         rawText = savedInstanceState?.getString("raw") ?: runCatching { draft.readText() }.getOrDefault("")
-        transcript.acceptFinal(rawText)
         output.setText(savedInstanceState?.getString("output") ?: runCatching { edited.readText() }.getOrDefault(rawText))
+        if (output.text.isNotBlank()) output.visibility = View.VISIBLE
         mode.setSelection(savedInstanceState?.getInt("mode") ?: 0)
-        capture.setSelection(savedInstanceState?.getInt("capture") ?: 0)
-        if (audio.exists()) status.text = "আগের অডিও রাখা আছে। আবার লেখা তৈরি করতে পারবেন।"
+        firstResume = savedInstanceState == null
+        // Old preview keys are no longer read or needed.
+        getSharedPreferences("voice_writer_key", MODE_PRIVATE).edit().clear().apply()
+        fitPanel()
+        if (audio.exists()) status.text = "আগের অডিও রাখা আছে। আবার তৈরি বা নতুন রেকর্ডিং বেছে নিন।"
     }
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun selectedMode() = VoiceRefiner.Mode.entries[mode.selectedItemPosition]
+    private fun fitPanel() {
+        window.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        window.setLayout(minOf(dp(560), resources.displayMetrics.widthPixels - dp(24)), WindowManager.LayoutParams.WRAP_CONTENT)
+        window.attributes = window.attributes.apply { y = dp(24) }
+    }
+    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); fitPanel() }
     private fun controls() {
-        val active = continuous || recorder != null || session.state != VoiceCaptureSession.State.IDLE
-        start.isEnabled = !active && !busy; done.isEnabled = active && !busy
-        capture.isEnabled = !active && !busy; mode.isEnabled = !active && !busy; apiKey.isEnabled = !active && !busy
-        output.isEnabled = !active && !busy
+        start.isEnabled = !busy && recorder == null && !audio.exists()
+        done.isEnabled = recorder != null && !busy
+        retry.isEnabled = audio.exists() && recorder == null && !busy
+        mode.isEnabled = !busy && recorder == null
+        output.isEnabled = !busy && recorder == null
+        progress.visibility = if (busy) View.VISIBLE else View.GONE
     }
     private fun begin() {
-        if (busy || continuous || recorder != null) return
-        stopPlayback()
+        if (!resumed || busy || recorder != null) return
+        if (audio.exists()) { status.text = "আগের অডিও রাখা আছে। নতুন রেকর্ডিং বাটন চাপুন।"; return }
+        val prefs = getSharedPreferences("voice_writer", MODE_PRIVATE)
+        if (!prefs.getBoolean("recording_notice_accepted", false)) {
+            AlertDialog.Builder(this).setTitle("বাংলা ভয়েস লেখা")
+                .setMessage("আপনার কথা ফোনে রেকর্ড হবে। শেষ করলে অ্যাপের সার্ভার ও Google Gemini দিয়ে লেখা তৈরি হবে। মাইক্রোফোনের অনুমতি শুধু রেকর্ডিংয়ের জন্য লাগবে।")
+                .setPositiveButton("শুরু করুন") { _, _ -> prefs.edit().putBoolean("recording_notice_accepted", true).apply(); begin() }
+                .setNegativeButton("পরে", null).show(); return
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            AlertDialog.Builder(this).setTitle("মাইক্রোফোনের অনুমতি")
-                .setMessage("আপনার কথা থেকে বাংলা লেখা তৈরি করতে মাইক্রোফোন লাগবে। রেকর্ডিং বন্ধ করলে বা স্ক্রিন ছেড়ে গেলে মাইক্রোফোন বন্ধ হবে।")
-                .setPositiveButton("চালিয়ে যান") { _, _ -> requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100) }
-                .setNegativeButton("বাতিল", null).show(); return
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 100); return
         }
-        if (capture.selectedItemPosition == 1) {
-            if (apiKey.text.isBlank()) { status.text = "অডিও থেকে লেখা তৈরির জন্য Gemini API Key দিন"; return }
-            if (audio.exists()) { status.text = "আগের অডিও থেকে লেখা তৈরি করুন অথবা নতুন লেখার বাটনে সেটি মুছুন"; return }
-            AlertDialog.Builder(this).setTitle("অডিও রেকর্ডিং ও Gemini")
-                .setMessage("এখন অডিও ফোনে রেকর্ড হবে, সর্বোচ্চ ১০ মিনিট। লেখা তৈরির সময় অডিও Google Gemini-তে যাবে। মূল অডিও আপনি মুছে না দেওয়া পর্যন্ত এই ফোনে থাকবে।")
-                .setPositiveButton("রেকর্ড করুন") { _, _ -> if (resumed) startAudio() }.setNegativeButton("বাতিল", null).show()
-        } else {
-            if (!SpeechRecognizer.isRecognitionAvailable(this)) { status.text = "এই ফোনে speech service নেই। অডিও রেকর্ডিং পদ্ধতি ব্যবহার করুন।"; return }
-            rawText = output.text.toString().trim(); transcript.reset(); transcript.acceptFinal(rawText)
-            retries = 0; continuous = true; startSegment()
-        }
-    }
-    private fun startSegment() {
-        if (!continuous || !resumed) return
-        recognizer?.destroy(); recognizer = null
-        val id = session.begin()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { if (session.accepts(id)) status.text = "শুনছি... কথা শেষ হলে নিচে চাপুন" }
-                override fun onBeginningOfSpeech() { retries = 0 }
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                // Remain active until final result or error, including after end-of-speech.
-                override fun onEndOfSpeech() {}
-                override fun onResults(results: Bundle?) {
-                    if (!session.accepts(id)) return
-                    val value = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                    if (value.isBlank()) { settleSpeech(id, "শেষ অংশ নিশ্চিত হয়নি; লেখা যাচাই করুন", true); return }
-                    transcript.acceptFinal(value); retries = 0
-                    settleSpeech(id, null, false)
-                }
-                override fun onPartialResults(partialResults: Bundle?) {
-                    if (session.accepts(id)) transcript.acceptInterim(partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty())
-                }
-                override fun onError(error: Int) {
-                    if (!session.accepts(id)) return
-                    val recoverable = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                    if (recoverable && continuous && retries++ < 3) settleSpeech(id, null, true)
-                    else { continuous = false; autoCopy = false; settleSpeech(id, "শোনা থেমেছে (ত্রুটি $error)। লেখা যাচাই করে আবার শুরু করুন। দীর্ঘ কথার জন্য অডিও রেকর্ডিং ব্যবহার করুন।", true) }
-                }
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
-        controls()
-        runCatching { recognizer?.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD"); putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        }) }.onFailure { continuous = false; settleSpeech(id, "মাইক্রোফোন চালু হয়নি। অনুমতি ও speech service যাচাই করুন।", true) }
-    }
-    private fun settleSpeech(id: Int, warning: String?, preserveInterim: Boolean) {
-        if (!session.settle(id)) return
-        handler.removeCallbacks(stopTimeout)
-        if (preserveInterim) {
-            // A provisional tail is never silently discarded or automatically copied as confirmed.
-            val tail = transcript.preview().removePrefix(transcript.snapshot()).trim()
-            if (tail.isNotBlank()) { transcript.acceptFinal(tail); autoCopy = false }
-        }
-        rawText = transcript.snapshot(); output.setText(rawText); saveDraft()
-        recognizer?.destroy(); recognizer = null
-        if (warning != null) { status.text = warning; autoCopy = false }
-        if (continuous) { handler.postDelayed(restart, 250); status.text = "পরের অংশ শুনতে প্রস্তুত হচ্ছে..." }
-        else if (autoCopy) { autoCopy = false; refineText() }
-        controls()
-    }
-    private fun finishCapture() {
-        if (busy) return
-        if (recorder != null) { stopAudio(); processAudio(); return }
-        continuous = false; handler.removeCallbacks(restart); autoCopy = true
-        if (session.state != VoiceCaptureSession.State.IDLE) {
-            session.stop(); status.text = "শেষ অংশের ফলাফলের অপেক্ষা করছি..."
-            handler.postDelayed(stopTimeout, 5000)
-            runCatching { recognizer?.stopListening() }.onFailure { settleSpeech(session.generation, "শেষ অংশ নিশ্চিত হয়নি; লেখা যাচাই করুন", true) }
-        } else { autoCopy = false; rawText = output.text.toString(); refineText() }
-        controls()
+        stopPlayback(); startAudio()
     }
     @Suppress("DEPRECATION")
     private fun startAudio() {
@@ -214,125 +143,103 @@ class VoiceWriterActivity : Activity() {
             instance.setOutputFile(audio.absolutePath)
             instance.setOnInfoListener { _, what, _ ->
                 if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
-                    stopAudio(); status.text = "রেকর্ডিংয়ের সীমায় পৌঁছেছে। রাখা অডিও থেকে লেখা তৈরি করুন।"
+                    stopAudio(); status.text = "সীমায় পৌঁছে রেকর্ডিং থেমেছে। আবার তৈরি করুন চাপুন।"
                 }
             }
-            instance.setOnErrorListener { _, _, _ -> stopAudio(); status.text = "রেকর্ডিংয়ে ত্রুটি। অডিও রাখা থাকলে আবার চেষ্টা করুন।" }
-            instance.prepare(); instance.start()
+            instance.setOnErrorListener { _, _, _ -> stopAudio(); status.text = "রেকর্ডিং থেমেছে। রাখা অডিও শুনে যাচাই করুন।" }
+            instance.prepare(); instance.start(); startedAt = SystemClock.elapsedRealtime()
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            handler.postDelayed(audioLimit, 600000)
-            status.text = "অডিও রেকর্ড হচ্ছে... সর্বোচ্চ ১০ মিনিট"; controls()
+            handler.post(timer); controls()
         } catch (_: Exception) {
             recorder?.release(); recorder = null; audio.delete()
-            status.text = "রেকর্ডিং শুরু হয়নি। মাইক্রোফোন অন্য অ্যাপে ব্যস্ত কি না যাচাই করুন।"; controls()
+            status.text = "মাইক্রোফোন চালু হয়নি। অন্য অ্যাপে রেকর্ডিং বা ফোনকল চলছে কি না দেখুন।"; controls()
         }
     }
-    private fun stopAudio() {
-        handler.removeCallbacks(audioLimit)
-        val instance = recorder ?: return
+    private fun stopAudio(): Boolean {
+        handler.removeCallbacks(timer)
+        val instance = recorder ?: return audio.exists()
         recorder = null
-        try { instance.stop() } catch (_: RuntimeException) { audio.delete() } finally { instance.release() }
+        var valid = true
+        try { instance.stop() } catch (_: RuntimeException) { valid = false; audio.delete() } finally { instance.release() }
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); controls()
+        return valid
     }
-    private fun stopPlayback() { player?.release(); player = null }
-    private fun playAudio() {
-        if (!audio.exists()) { status.text = "রাখা অডিও পাওয়া যায়নি"; return }
-        runCatching {
-            val instance = MediaPlayer()
-            player = instance
-            instance.apply {
-                setDataSource(audio.absolutePath)
-                setOnCompletionListener { stopPlayback(); status.text = "অডিও শোনা শেষ" }
-                setOnErrorListener { _, _, _ -> stopPlayback(); status.text = "অডিও চালানো যায়নি"; true }
-                prepare(); start()
-            }
-            status.text = "রাখা অডিও চলছে..."
-        }.onFailure { stopPlayback(); status.text = "অডিও চালানো যায়নি" }
+    private fun finishCapture() {
+        if (busy || recorder == null) return
+        if (stopAudio()) processAudio() else status.text = "অডিও খুব ছোট হয়েছে বা রেকর্ড হয়নি। আবার শুরু করুন।"
     }
+    private fun selectedMode() = when (mode.selectedItemPosition) { 1 -> VoiceRefiner.Mode.ORIGINAL; 2 -> VoiceRefiner.Mode.LEARNER; else -> VoiceRefiner.Mode.REFINE }
     private fun processAudio() {
-        stopPlayback()
-        if (!audio.exists() || audio.length() == 0L) { status.text = "রেকর্ড করা অডিও পাওয়া যায়নি"; return }
-        if (apiKey.text.isBlank()) { status.text = "Gemini API Key দিন; অডিও ফোনে রাখা আছে"; return }
-        busy = true; controls(); status.text = "অডিও থেকে বাংলা লেখা তৈরি হচ্ছে..."
-        val id = ++requestGeneration
-        VoiceRefiner.transcribe(audio, apiKey.text.toString().trim()) { result ->
-            if (isDestroyed || id != requestGeneration) return@transcribe
-            busy = false
-            result.onSuccess {
-                rawText = it; output.setText(it); transcript.reset(); transcript.acceptFinal(it); saveDraft()
-                refineText()
-            }.onFailure { status.text = "লেখা তৈরি হয়নি: ${it.message ?: "নেটওয়ার্ক যাচাই করুন"}। অডিও ফোনে রাখা আছে।"; controls() }
-        }
-    }
-    private fun refineText() {
-        if (rawText.isBlank()) { status.text = "কোনো লেখা পাওয়া যায়নি"; controls(); return }
-        busy = true; controls(); status.text = "লেখা তৈরি হচ্ছে..."
-        val id = ++requestGeneration
-        VoiceRefiner.refine(rawText, selectedMode(), apiKey.text.toString().trim()) { result ->
-            if (isDestroyed || id != requestGeneration) return@refine
-            busy = false
-            result.onSuccess {
-                output.setText(it); saveDraft()
-                // Clipboard writes require a visible foreground activity. Never copy from a late callback.
-                if (resumed) copyText(it) else status.text = "লেখা প্রস্তুত। ফিরে এসে যাচাই করে কপি করুন।"
-            }.onFailure { output.setText(rawText); status.text = "Refine ব্যর্থ: ${it.message ?: "নেটওয়ার্ক যাচাই করুন"}। মূল লেখা রাখা আছে।" }
-            controls()
+        if (!audio.exists() || audio.length() == 0L) { status.text = "কোনো রেকর্ড করা অডিও নেই"; return }
+        stopPlayback(); busy = true; controls(); status.text = "বাংলা লেখা তৈরি হচ্ছে..."
+        val selected = selectedMode(); val id = ++generation
+        VoiceRefiner.transcribe(this, audio) { result ->
+            if (isDestroyed || id != generation) return@transcribe
+            result.onSuccess { text ->
+                rawText = text; output.setText(text); output.visibility = View.VISIBLE; saveDraft()
+                VoiceRefiner.refine(this, text, selected) { refined ->
+                    if (isDestroyed || id != generation) return@refine
+                    busy = false
+                    refined.onSuccess {
+                        output.setText(it); saveDraft()
+                        if (resumed) copyText(it) else status.text = "লেখা প্রস্তুত। প্যানেলে ফিরে কপি করুন।"
+                    }.onFailure { status.text = "${it.message ?: "লেখা সাজানো যায়নি"}। মূল লেখা কপি করতে পারবেন।" }
+                    controls()
+                }
+            }.onFailure { busy = false; status.text = "${it.message ?: "নেটওয়ার্ক সমস্যা"}। অডিও ফোনে রাখা আছে।"; controls() }
         }
     }
     private fun copyText(value: String) {
+        if (!resumed || busy || recorder != null) return
         if (value.isBlank()) { status.text = "কপি করার মতো লেখা নেই"; return }
-        if (!resumed || busy || continuous || recorder != null || session.state != VoiceCaptureSession.State.IDLE) return
         (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Voice Writer", value))
-        status.text = "লেখা কপি হয়েছে। অন্য অ্যাপে পেস্ট করুন।"
+        status.text = "✓ কপি হয়েছে। প্যানেল বন্ধ করে পেস্ট করুন।"
     }
     private fun saveDraft() { runCatching { draft.parentFile?.mkdirs(); draft.writeText(rawText); edited.writeText(output.text.toString()) } }
-    private fun clearDraft() {
-        stopPlayback()
-        continuous = false; autoCopy = false; handler.removeCallbacksAndMessages(null)
-        session.cancel(); recognizer?.destroy(); recognizer = null; stopAudio()
-        rawText = ""; transcript.reset(); output.setText(""); audio.delete(); draft.delete(); edited.delete()
-        status.text = "নতুন লেখা শুরু করতে পারবেন"; controls()
+    private fun newRecording() {
+        if (busy || recorder != null) return
+        if (!audio.exists() && output.text.isBlank()) { begin(); return }
+        AlertDialog.Builder(this).setTitle("আগের অডিও ও লেখা মুছে নতুন করে শুরু করবেন?")
+            .setPositiveButton("নতুন করে শুরু") { _, _ -> stopPlayback(); audio.delete(); draft.delete(); edited.delete(); rawText = ""; output.setText(""); output.visibility = View.GONE; controls(); begin() }
+            .setNegativeButton("আগেরটি রাখুন", null).show()
+    }
+    private fun stopPlayback() { player?.release(); player = null }
+    private fun playAudio() {
+        if (!audio.exists()) { status.text = "শোনার মতো অডিও নেই"; return }
+        runCatching {
+            val instance = MediaPlayer(); player = instance
+            instance.setDataSource(audio.absolutePath)
+            instance.setOnCompletionListener { stopPlayback(); status.text = "অডিও শোনা শেষ" }
+            instance.setOnErrorListener { _, _, _ -> stopPlayback(); status.text = "অডিও চালানো যায়নি"; true }
+            instance.prepare(); instance.start(); status.text = "অডিও চলছে... আবার চাপলে বন্ধ হবে"
+        }.onFailure { stopPlayback(); status.text = "অডিও চালানো যায়নি" }
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != 100) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            pendingPermissionStart = true
-            if (resumed) { pendingPermissionStart = false; begin() }
-        }
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) { pendingStart = true; if (resumed) { pendingStart = false; begin() } }
         else {
-            status.text = "মাইক্রোফোনের অনুমতি ছাড়া কথা রেকর্ড করা যাবে না"
+            status.text = "মাইক্রোফোনের অনুমতি দেওয়া হয়নি"
             if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) AlertDialog.Builder(this)
-                .setMessage("ফোনের App Settings থেকে মাইক্রোফোনের অনুমতি দিন।")
+                .setMessage("App Settings থেকে মাইক্রোফোনের অনুমতি দিন।")
                 .setPositiveButton("Settings") { _, _ -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
                 .setNegativeButton("পরে", null).show()
         }
     }
     override fun onResume() {
-        super.onResume(); resumed = true
-        if (::start.isInitialized) controls()
-        if (pendingPermissionStart) { pendingPermissionStart = false; handler.post { if (resumed) begin() } }
+        super.onResume(); resumed = true; controls(); fitPanel()
+        val shouldStart = pendingStart || (firstResume && !audio.exists())
+        pendingStart = false; firstResume = false
+        if (shouldStart) handler.post { if (resumed && recorder == null && !busy) begin() }
     }
     override fun onPause() {
-        stopPlayback()
-        resumed = false; continuous = false; autoCopy = false
-        handler.removeCallbacks(restart); handler.removeCallbacks(stopTimeout)
-        if (session.state != VoiceCaptureSession.State.IDLE) {
-            val pending = transcript.preview(); session.cancel(); recognizer?.cancel(); recognizer?.destroy(); recognizer = null
-            transcript.reset(); transcript.acceptFinal(pending); rawText = pending; output.setText(rawText); saveDraft()
-            status.text = "স্ক্রিন ছেড়ে যাওয়ায় শোনা বন্ধ হয়েছে। শেষ অংশ যাচাই করুন।"
-        }
+        resumed = false; stopPlayback()
         if (recorder != null) { stopAudio(); status.text = "রেকর্ডিং বন্ধ হয়েছে। অডিও রাখা আছে।" }
-        if (!busy) { runCatching { edited.apply { parentFile?.mkdirs() }.writeText(output.text.toString()) } }
-        controls(); super.onPause()
+        saveDraft(); super.onPause()
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("raw", rawText); outState.putString("output", output.text.toString())
-        outState.putInt("mode", mode.selectedItemPosition); outState.putInt("capture", capture.selectedItemPosition)
+        outState.putString("raw", rawText); outState.putString("output", output.text.toString()); outState.putInt("mode", mode.selectedItemPosition)
         super.onSaveInstanceState(outState)
     }
-    override fun onDestroy() {
-        requestGeneration++; handler.removeCallbacksAndMessages(null); session.cancel()
-        recognizer?.destroy(); stopPlayback(); stopAudio(); super.onDestroy()
-    }
+    override fun onDestroy() { generation++; handler.removeCallbacksAndMessages(null); stopPlayback(); stopAudio(); super.onDestroy() }
 }

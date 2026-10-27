@@ -62,6 +62,15 @@ try {
   assert.match(providerBody.systemInstruction.parts[0].text,/physically present/);
   assert.equal(db.execute("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name NOT IN ('usage')").n,0);
  });
+ await test('voice route uses the existing Google login and rejects unauthenticated requests',async()=>{
+  const db=database(),env=envFor(db);
+  const body={operation:'transcribe',mimeType:'audio/mp4',audio:btoa('audio')};
+  const unsigned=new Request('https://example.test/voice',{method:'POST',body:JSON.stringify(body)});
+  assert.equal((await worker.fetch(unsigned,env)).status,401);
+  const response=await worker.fetch(request('/voice',await token(),body),env);
+  assert.equal(response.status,200);assert.ok((await response.json()).text);
+  assert.equal(db.execute("SELECT count(*) AS n FROM usage WHERE bucket LIKE '%:voice:%'").n,1);
+ });
  await test('wrong audience, expired tokens and missing expiry fail before model or database use',async()=>{
   const db=database(),env=envFor(db),before=providerCalls;
   for(const overrides of [{aud:'wrong'},{exp:1},{exp:undefined},{iat:undefined}]) {

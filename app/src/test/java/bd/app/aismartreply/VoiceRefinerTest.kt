@@ -5,31 +5,27 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class VoiceRefinerTest {
-    @Test fun originalWorksWithoutNetworkOrKey() {
+    @Test fun originalWorksWithoutLoginOrNetwork() {
         var output = ""
-        VoiceRefiner.refine("  বাংলা ১২৩  ", VoiceRefiner.Mode.ORIGINAL, "") { output = it.getOrThrow() }
+        VoiceRefiner.refine(RuntimeEnvironment.getApplication(), "  বাংলা ১২৩  ", VoiceRefiner.Mode.ORIGINAL) { output = it.getOrThrow() }
         assertEquals("বাংলা ১২৩", output)
     }
-    @Test fun missingKeyFailsWithoutChangingOriginal() {
-        var failed = false
-        VoiceRefiner.refine("মূল কথা", VoiceRefiner.Mode.REFINE, "") { failed = it.isFailure }
-        assertTrue(failed)
+    @Test fun noGoogleLoginGivesActionableErrorWithoutAskingForApiKey() {
+        var error = ""
+        VoiceRefiner.refine(RuntimeEnvironment.getApplication(), "মূল কথা", VoiceRefiner.Mode.REFINE) { error = it.exceptionOrNull()?.message.orEmpty() }
+        assertTrue(error.contains("Google")); assertFalse(error.contains("API"))
     }
-    @Test fun concatenatesAllTextPartsAndExcludesThinking() {
-        val response = JSONObject("""{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"internal","thought":true},{"text":"আমার নাম"},{"text":"হোসাইন ৪২"}]}}]}""")
-        assertEquals("আমার নাম\nহোসাইন ৪২", VoiceRefiner.parseResponse(response))
+    @Test fun parsesVoiceGatewayTextWithoutReplyTruncation() {
+        val text = "বাংলা বক্তব্য ১২৩ ".repeat(200)
+        assertEquals(text.trim(), VoiceRefiner.parseResponse(JSONObject().put("text", text)))
     }
-    @Test fun truncatedBlockedOrEmptyAnswersAreNeverCopiedAsComplete() {
-        for (json in listOf(
-            """{"candidates":[{"finishReason":"MAX_TOKENS","content":{"parts":[{"text":"half"}]}}]}""",
-            """{"promptFeedback":{"blockReason":"SAFETY"}}""",
-            """{"candidates":[{"finishReason":"STOP","content":{"parts":[]}}]}""")) {
-            assertTrue(runCatching { VoiceRefiner.parseResponse(JSONObject(json)) }.isFailure)
-        }
+    @Test fun emptyGatewayResultsAreRejected() {
+        assertTrue(runCatching { VoiceRefiner.parseResponse(JSONObject()) }.isFailure)
     }
 }

@@ -11,7 +11,7 @@
         <service android:name=".VoiceOverlayService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled draggable voice writer launcher displayed over other apps"/>
         </service>
-        <activity android:name=".VoiceWriterActivity" android:exported="false"/>
+        <activity android:name=".VoiceWriterActivity" android:exported="false" android:theme="@style/VoiceWriterPanel" android:taskAffinity="bd.app.aismartreply.voice" android:excludeFromRecents="true" android:launchMode="singleTask" android:configChanges="orientation|screenSize"/>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

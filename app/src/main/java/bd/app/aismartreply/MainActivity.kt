@@ -156,28 +156,25 @@ class MainActivity : Activity() {
         runCatching { startForegroundService(Intent(this, VoiceOverlayService::class.java)) }
             .onFailure { Toast.makeText(this, "ভাসমান বাটন চালু হয়নি; অনুমতি যাচাই করুন", Toast.LENGTH_LONG).show() }
     }
+    private fun requestVoiceOverlay() {
+        if (Settings.canDrawOverlays(this)) { startVoiceOverlay(); return }
+        AlertDialog.Builder(this).setTitle("ভাসমান বাটনের অনুমতি")
+            .setMessage("অন্য অ্যাপের ওপর ভয়েস বাটন দেখাতে অনুমতি দিন।")
+            .setPositiveButton("অনুমতি দিন") { _, _ -> pendingVoiceOverlay = true; startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) }
+            .setNegativeButton("পরে", null).show()
+    }
     private fun home() {
         val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
         heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
-        column.addView(action("🎙 Voice Writer (পরীক্ষামূলক)", { startActivity(Intent(this, VoiceWriterActivity::class.java)) }, false))
-        column.addView(action("🎙 Floating Voice Button চালু করুন", {
-            if (!Settings.canDrawOverlays(this)) {
-                AlertDialog.Builder(this).setTitle("ভাসমান বাটনের অনুমতি")
-                    .setMessage("অন্য অ্যাপের ওপর ছোট Voice Writer বাটন দেখাতে অনুমতি দিন। মাইক্রোফোন শুধু আপনার চাপ দেওয়ার পর চালু হবে।")
-                    .setPositiveButton("অনুমতি দিন") { _, _ ->
-                        pendingVoiceOverlay = true
-                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            android.net.Uri.parse("package:$packageName")))
-                    }.setNegativeButton("বাতিল", null).show()
-            } else {
-                startVoiceOverlay()
-            }
-        }, false))
-        column.addView(action("Floating Voice Button বন্ধ করুন", {
-            stopService(Intent(this, VoiceOverlayService::class.java))
-            Toast.makeText(this, "ভাসমান বাটন বন্ধ হয়েছে", Toast.LENGTH_SHORT).show()
-        }, false))
+        val voiceCard = card()
+        voiceCard.addView(action("🎙 কথা বলে লিখুন", { startActivity(Intent(this, VoiceWriterActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, false))
+        voiceCard.addView(space(6))
+        val voiceControls = horizontal()
+        voiceControls.addView(action("ভাসমান বাটন চালু", { requestVoiceOverlay() }, false), LinearLayout.LayoutParams(0, -2, 1f))
+        voiceControls.addView(space(6))
+        voiceControls.addView(action("বন্ধ", { stopService(Intent(this, VoiceOverlayService::class.java)) }, false), LinearLayout.LayoutParams(0, -2, 1f))
+        voiceCard.addView(voiceControls); addCard(voiceCard)
         val signedIn = GoogleAuth.account(this)
         val accountCard = card()
         accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
