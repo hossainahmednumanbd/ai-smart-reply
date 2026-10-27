@@ -171,7 +171,7 @@ export default {
     if (!["/reply", "/feedback", "/account", "/voice"].includes(url.pathname)) return json(404, { error: "Not found" });
     const expectedMethod = url.pathname === "/account" ? "DELETE" : "POST";
     if (request.method !== expectedMethod) return json(405, { error: expectedMethod + " required" });
-    if (!env.GOOGLE_WEB_CLIENT_ID || !env.DB || (["/reply", "/voice"].includes(url.pathname) && !env.GEMINI_API_KEY)) return json(503, { error: "Backend not configured" });
+    if (!env.GOOGLE_WEB_CLIENT_ID || !env.DB || ((url.pathname === "/reply" && !env.GEMINI_API_KEY) || (url.pathname === "/voice" && !(env.VOICE_GEMINI_API_KEY || env.GEMINI_API_KEY)))) return json(503, { error: "Backend not configured" });
     const bearer = request.headers.get("authorization") || "";
     if (!bearer.startsWith("Bearer ")) return json(401, { error: "Google login required" });
     let userId;

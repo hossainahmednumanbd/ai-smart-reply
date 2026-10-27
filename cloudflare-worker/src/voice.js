@@ -48,20 +48,21 @@ export async function handleVoice(request,env,userId) {
     const quota=await env.DB.prepare('INSERT INTO usage (bucket, count) VALUES (?1, 1) ON CONFLICT(bucket) DO UPDATE SET count=count+1 WHERE count < 40 RETURNING count').bind(bucket).first();
     if(!quota)return json(429,{error:'Voice daily limit reached'});
   } catch {return json(503,{error:'Voice usage database unavailable'});}
+  const apiKey=env.VOICE_GEMINI_API_KEY || env.GEMINI_API_KEY;
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),90000);
   try {
     const configured=String(env.VOICE_GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//,'');
     const body=JSON.stringify({contents:[{role:'user',parts}],generationConfig:{temperature:0.1,maxOutputTokens:16384}});
     const generate=name=>fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(name)+':generateContent',{
-      method:'POST',signal:controller.signal,headers:{'content-type':'application/json','x-goog-api-key':env.GEMINI_API_KEY},body});
+      method:'POST',signal:controller.signal,headers:{'content-type':'application/json','x-goog-api-key':apiKey},body});
     const cached=resolvedVoiceModel;
-    const selected=cached && cached.key===env.GEMINI_API_KEY && cached.configured===configured && cached.expires>Date.now()?cached.model:configured;
+    const selected=cached && cached.key===apiKey && cached.configured===configured && cached.expires>Date.now()?cached.model:configured;
     let response=await generate(selected);
     // Discover available models only for missing-model errors, never quota or auth failures.
     if(response.status===404) {
       await response.body?.cancel();resolvedVoiceModel=undefined;
       const listing=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',{
-        signal:controller.signal,headers:{'x-goog-api-key':env.GEMINI_API_KEY}});
+        signal:controller.signal,headers:{'x-goog-api-key':apiKey}});
       if(!listing.ok)return json(502,{error:'Voice model discovery unavailable'});
       const data=await listing.json();
       const candidates=(Array.isArray(data.models)?data.models:[])
@@ -71,7 +72,7 @@ export async function handleVoice(request,env,userId) {
         .sort((a,b)=>Number(/preview|exp-/.test(a))-Number(/preview|exp-/.test(b)) || b.localeCompare(a,'en',{numeric:true}));
       for(const model of candidates.slice(0,2)) {
         response=await generate(model);
-        if(response.ok)resolvedVoiceModel={key:env.GEMINI_API_KEY,configured,model,expires:Date.now()+3600000};
+        if(response.ok)resolvedVoiceModel={key:apiKey,configured,model,expires:Date.now()+3600000};
         if(response.status!==404)break;
         await response.body?.cancel();
       }

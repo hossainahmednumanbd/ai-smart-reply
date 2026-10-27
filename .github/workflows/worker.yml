@@ -53,6 +53,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python3 scripts/check_worker_deploy_access.py
+      - name: Validate and install dedicated voice key
+        if: github.event_name != 'pull_request' && steps.access.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VOICE_GEMINI_API_KEY: ${{ secrets.VOICE_GEMINI_API_KEY }}
+        run: python3 scripts/configure_voice_key.py
       - name: Inspect deployed model names without exposing credentials
         if: github.event_name != 'pull_request' && steps.access.outputs.configured == 'true'
         env:

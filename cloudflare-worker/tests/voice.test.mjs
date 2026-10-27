@@ -27,6 +27,14 @@ try{
    assert.match(called,/gemini-2\.5-flash-lite:generateContent$/);
   }finally{globalThis.fetch=before;}
  });
+ await test('dedicated voice key is used without changing Auto Reply key',async()=>{
+  const before=globalThis.fetch;let key;
+  globalThis.fetch=async(url,init)=>{key=init.headers['x-goog-api-key'];return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'সম্পূর্ণ কথা'}]}}]});};
+  try{const e=env();e.VOICE_GEMINI_API_KEY='voice-only-test';
+   assert.equal((await handleVoice(request(audio),e,'one')).status,200);
+   assert.equal(key,'voice-only-test');assert.equal(e.GEMINI_API_KEY,'test-only');
+  }finally{globalThis.fetch=before;}
+ });
  await test('refinement does not truncate long Bengali input or require user API keys',async()=>{
   const text='বাংলা বক্তব্য '.repeat(800);const parts=voiceParts({operation:'refine',mode:'refine',text});
   assert.ok(parts[0].text.endsWith(text));assert.match(parts[0].text,/Never answer/);
