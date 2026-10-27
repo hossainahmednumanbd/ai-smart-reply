@@ -32,6 +32,9 @@ class VoiceOverlayService : Service() {
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("AI Voice Writer")
+            .setContentIntent(PendingIntent.getActivity(this, 2, Intent(this, VoiceWriterActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .setOngoing(true)
             .setContentText("Floating button is enabled. Tap to write; stop from notification.")
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
             .build()
@@ -46,8 +49,13 @@ class VoiceOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = prefs.getInt("x", 20)
             y = prefs.getInt("y", 220)
+            x = x.coerceIn(0, (resources.displayMetrics.widthPixels - size).coerceAtLeast(0))
+            y = y.coerceIn(0, (resources.displayMetrics.heightPixels - size - 80).coerceAtLeast(0))
         }
-        val view = TextView(this).apply {
+        val view = object : TextView(this) {
+            override fun performClick(): Boolean { super.performClick(); return true }
+        }.apply {
+            contentDescription = "বাংলা Voice Writer খুলুন"
             text = "🎙"; textSize = 25f; gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -55,6 +63,11 @@ class VoiceOverlayService : Service() {
                 cornerRadius = size.toFloat()
             }
             elevation = 10f
+        }
+        view.setOnClickListener {
+            val intent = Intent(this, VoiceWriterActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            runCatching { startActivity(intent) }
         }
         var downX = 0f
         var downY = 0f
@@ -72,19 +85,17 @@ class VoiceOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - downX).toInt()
                     val dy = (event.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) moved = true
+                    if (kotlin.math.abs(dx) > ViewConfiguration.get(this).scaledTouchSlop || kotlin.math.abs(dy) > ViewConfiguration.get(this).scaledTouchSlop) moved = true
                     params?.let {
-                        it.x = (initialX + dx).coerceAtLeast(0)
-                        it.y = (initialY + dy).coerceAtLeast(0)
-                        manager?.updateViewLayout(view, it)
+                        it.x = (initialX + dx).coerceIn(0, (resources.displayMetrics.widthPixels - size).coerceAtLeast(0))
+                        it.y = (initialY + dy).coerceIn(0, (resources.displayMetrics.heightPixels - size - 80).coerceAtLeast(0))
+                        runCatching { manager?.updateViewLayout(view, it) }.onFailure { stopSelf() }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        val intent = Intent(this, VoiceWriterActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        startActivity(intent)
+                        view.performClick()
                     } else {
                         params?.let { prefs.edit().putInt("x", it.x).putInt("y", it.y).apply() }
                     }
@@ -94,7 +105,7 @@ class VoiceOverlayService : Service() {
             }
         }
         bubble = view
-        manager?.addView(view, params)
+        runCatching { manager?.addView(view, params) }.onFailure { stopSelf() }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }

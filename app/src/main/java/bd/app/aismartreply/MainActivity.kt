@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private val dark = Color.rgb(18, 32, 62)
     private val muted = Color.rgb(105, 116, 136)
     private val bg = Color.rgb(246, 249, 255)
+    private var pendingVoiceOverlay = false
     private var page = "home"
     private lateinit var column: LinearLayout
     private var selected: Incoming? = null
@@ -69,9 +70,15 @@ class MainActivity : Activity() {
             nm.isNotificationListenerAccessGranted(ComponentName(this, ReplyListener::class.java))
         else Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
     }
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); AutoReplyGuard.installSafetyUpdate(this); render() }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); pendingVoiceOverlay = savedInstanceState?.getBoolean("pending_voice_overlay") ?: false; AutoReplyGuard.installSafetyUpdate(this); render() }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("pending_voice_overlay", pendingVoiceOverlay); super.onSaveInstanceState(outState) }
     override fun onResume() {
         super.onResume()
+        if (pendingVoiceOverlay) {
+            pendingVoiceOverlay = false
+            if (Settings.canDrawOverlays(this)) startVoiceOverlay()
+            else Toast.makeText(this, "ভাসমান বাটনের অনুমতি দেওয়া হয়নি", Toast.LENGTH_LONG).show()
+        }
         if (hasAccess()) ReplyListener.reconnect(this)
         AutoReplyService.sync(this)
         render()
@@ -142,6 +149,13 @@ class MainActivity : Activity() {
         }
         column.addView(space(17))
     }
+    private fun startVoiceOverlay() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 8403)
+        }
+        runCatching { startForegroundService(Intent(this, VoiceOverlayService::class.java)) }
+            .onFailure { Toast.makeText(this, "ভাসমান বাটন চালু হয়নি; অনুমতি যাচাই করুন", Toast.LENGTH_LONG).show() }
+    }
     private fun home() {
         val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
@@ -152,13 +166,12 @@ class MainActivity : Activity() {
                 AlertDialog.Builder(this).setTitle("ভাসমান বাটনের অনুমতি")
                     .setMessage("অন্য অ্যাপের ওপর ছোট Voice Writer বাটন দেখাতে অনুমতি দিন। মাইক্রোফোন শুধু আপনার চাপ দেওয়ার পর চালু হবে।")
                     .setPositiveButton("অনুমতি দিন") { _, _ ->
+                        pendingVoiceOverlay = true
                         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                             android.net.Uri.parse("package:$packageName")))
                     }.setNegativeButton("বাতিল", null).show()
             } else {
-                val service = Intent(this, VoiceOverlayService::class.java)
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
-                Toast.makeText(this, "ভাসমান বাটন চালু হয়েছে", Toast.LENGTH_SHORT).show()
+                startVoiceOverlay()
             }
         }, false))
         column.addView(action("Floating Voice Button বন্ধ করুন", {

@@ -1,8 +1,10 @@
 name: Android signed APK
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches: [main]
+  push:
+    branches: [main, feature/floating-voice-writer]
 permissions:
   contents: read
 concurrency:
@@ -35,19 +37,30 @@ jobs:
           if-no-files-found: ignore
       - name: Test gateway
         run: node --test cloudflare-worker/tests/*.test.mjs
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-smart-reply-voice-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Build APK with permanent signing key
+        if: github.event_name != 'pull_request'
         env:
           ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
         run: python3 scripts/build_signed_apk.py
       - name: Verify APK signing certificate
+        if: github.event_name != 'pull_request'
         run: |
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: ai-smart-reply-signed-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: ai-smart-reply-play-bundle
           path: app/build/outputs/bundle/release/app-release.aab

@@ -11,3 +11,5 @@ local.properties
 signing-secret.txt
 recovery.json
 *signing-backup*.zip
+
+.kotlin/
