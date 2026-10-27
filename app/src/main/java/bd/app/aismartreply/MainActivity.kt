@@ -147,6 +147,24 @@ class MainActivity : Activity() {
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
         heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
         column.addView(action("🎙 Voice Writer (পরীক্ষামূলক)", { startActivity(Intent(this, VoiceWriterActivity::class.java)) }, false))
+        column.addView(action("🎙 Floating Voice Button চালু করুন", {
+            if (!Settings.canDrawOverlays(this)) {
+                AlertDialog.Builder(this).setTitle("ভাসমান বাটনের অনুমতি")
+                    .setMessage("অন্য অ্যাপের ওপর ছোট Voice Writer বাটন দেখাতে অনুমতি দিন। মাইক্রোফোন শুধু আপনার চাপ দেওয়ার পর চালু হবে।")
+                    .setPositiveButton("অনুমতি দিন") { _, _ ->
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:$packageName")))
+                    }.setNegativeButton("বাতিল", null).show()
+            } else {
+                val service = Intent(this, VoiceOverlayService::class.java)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
+                Toast.makeText(this, "ভাসমান বাটন চালু হয়েছে", Toast.LENGTH_SHORT).show()
+            }
+        }, false))
+        column.addView(action("Floating Voice Button বন্ধ করুন", {
+            stopService(Intent(this, VoiceOverlayService::class.java))
+            Toast.makeText(this, "ভাসমান বাটন বন্ধ হয়েছে", Toast.LENGTH_SHORT).show()
+        }, false))
         val signedIn = GoogleAuth.account(this)
         val accountCard = card()
         accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
