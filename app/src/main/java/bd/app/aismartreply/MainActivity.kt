@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private val bg = Color.rgb(246, 249, 255)
     private var voicePlayback: android.media.MediaPlayer? = null
     private var voiceStatusLabel: TextView? = null
+    private var backupStatusLabel: TextView? = null
     private var pendingVoiceOverlay = false
     private var page = "home"
     private lateinit var column: LinearLayout
@@ -35,6 +36,7 @@ class MainActivity : Activity() {
     private val statusHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val statusRefresh = object : Runnable {
         override fun run() {
+            backupStatusLabel?.text = DriveBackups.status(this@MainActivity)
             voiceStatusLabel?.text = if (VoiceOverlayService.recording) "● রেকর্ড হচ্ছে" else if (VoiceOverlayService.running) "● চালু" else "○ বন্ধ"
             voiceStatusLabel?.setTextColor(if (VoiceOverlayService.running) Color.rgb(0, 160, 70) else muted)
             connectionLabel?.text = if (ReplyListener.connected()) "✓ মেসেজ সংযোগ সক্রিয়" else "মেসেজ সংযোগ বিচ্ছিন্ন; পুনঃসংযোগের চেষ্টা চলছে"
@@ -82,6 +84,7 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
+        DriveBackups.schedule(this)
         if (pendingVoiceOverlay) {
             pendingVoiceOverlay = false
             if (Settings.canDrawOverlays(this)) startVoiceOverlay()
@@ -96,6 +99,7 @@ class MainActivity : Activity() {
     @Deprecated("Google Sign-In activity result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == DriveBackups.REQUEST_CODE) { DriveBackups.result(this, resultCode, data); render(); return }
         if (requestCode == GoogleAuth.REQUEST_CODE) {
             GoogleAuth.handleResult(data).onSuccess {
                 ReplyStore.set(this, "ai_auto", false)
@@ -112,6 +116,7 @@ class MainActivity : Activity() {
     private fun stopVoicePlayback() { voicePlayback?.release(); voicePlayback = null }
     private fun render() {
         voiceStatusLabel = null
+        backupStatusLabel = null
         connectionLabel = null; connectionDetails = null;
         val root = vertical().apply {
             setBackgroundColor(bg)
@@ -522,6 +527,7 @@ class MainActivity : Activity() {
             }.show()
     }
     private fun eraseLocalData() {
+        DriveBackups.disconnect(this)
         AiEngine.invalidatePending()
         ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
         listOf("reply_settings", "reply_customization", "auto_dedup_v2", "auto_reply_guard_v1", "ai_auto_state", "ai_output").forEach {
@@ -667,6 +673,12 @@ class MainActivity : Activity() {
         account.addView(space(8))
         account.addView(label("AI উত্তর আপনার Cloudflare Worker-এর মাধ্যমে Gemini থেকে তৈরি হবে। কোনো API Key ফোনে রাখা হয় না।", 13f, muted))
         addCard(account)
+        val backup = card()
+        backup.addView(label("Google Drive ব্যাকআপ", 19f, dark, true))
+        backupStatusLabel = label(DriveBackups.status(this), 13f, muted).also { backup.addView(it) }
+        backup.addView(action("ব্যাকআপ চালু / ফিরিয়ে আনুন", { DriveBackups.show(this) { render() } }, false))
+        backup.addView(label("টেমপ্লেট, ব্যবসার তথ্য ও AI নির্দেশনা নিজের Drive-এ রাখুন। নতুন ফোনে একই Google অ্যাকাউন্টে অনুমতি দিয়ে ফিরিয়ে আনুন। সফল ব্যাকআপের সময় দেখে নিশ্চিত হোন।", 13f, muted))
+        addCard(backup)
         val notice = card()
         notice.addView(label("গোপনীয়তা ও সীমাবদ্ধতা", 17f, dark, true))
         notice.addView(space(8))
@@ -680,7 +692,7 @@ class MainActivity : Activity() {
         notice.addView(space(8)); notice.addView(action("ভুল / আপত্তিকর AI উত্তর রিপোর্ট", { reportReply() }, false))
         notice.addView(space(8)); notice.addView(action("অ্যাকাউন্টের ডেটা মুছুন ও সংযোগ সরান", {
             AlertDialog.Builder(this).setTitle("এই অ্যাপের ডেটা মুছবেন?")
-                .setMessage("মেসেজের স্থানীয় কপি, নিজের নিয়ম, AI নির্দেশনা এবং সার্ভারের রিপোর্ট মুছে যাবে। Google সংযোগ সরবে। আজকের AI ব্যবহার গণনা দিন শেষ পর্যন্ত থাকবে।")
+                .setMessage("মেসেজের স্থানীয় কপি, নিজের নিয়ম, AI নির্দেশনা এবং সার্ভারের রিপোর্ট মুছে যাবে। Google সংযোগ সরবে। আজকের AI ব্যবহার গণনা দিন শেষ পর্যন্ত থাকবে। Google Drive-এর ব্যাকআপ আলাদা; Drive-এর Manage apps থেকে অ্যাপের সংরক্ষিত ডেটা মুছতে হবে।")
                 .setNegativeButton("বাতিল", null).setPositiveButton("মুছুন") { _, _ ->
                     ReplyStore.set(this, "ai_auto", false); ReplyStore.set(this, "auto", false); AutoReplyService.sync(this)
                     if (!AiEngine.configured(this)) eraseLocalData()

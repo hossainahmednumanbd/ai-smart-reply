@@ -24,16 +24,16 @@ object ReplyPreferences {
         val a = JSONArray()
         rules.take(30).forEach { a.put(JSONObject().put("id", it.id).put("keywords", it.keywords)
             .put("reply", it.reply).put("exact", it.exact).put("enabled", it.enabled).put("allWords", it.allWords)) }
-        prefs(ctx).edit().putString("rules", a.toString()).apply()
+        synchronized(DriveBackups) { prefs(ctx).edit().putString("rules", a.toString()).apply(); DriveBackups.changed(ctx) }
     }
     fun matched(ctx: Context, message: String) = ReplyRules.resolve(rules(ctx), message)
     fun fallback(ctx: Context) = prefs(ctx).getString("fallback", "আপনার মেসেজ পেয়েছি। একটু পরে বিস্তারিত জানাচ্ছি।").orEmpty()
     fun fallbackEnabled(ctx: Context) = prefs(ctx).getBoolean("fallback_enabled", false)
-    fun setFallbackEnabled(ctx: Context, enabled: Boolean) { prefs(ctx).edit().putBoolean("fallback_enabled", enabled).apply() }
+    fun setFallbackEnabled(ctx: Context, enabled: Boolean) { synchronized(DriveBackups) { prefs(ctx).edit().putBoolean("fallback_enabled", enabled).apply(); DriveBackups.changed(ctx) } }
     fun templateReply(ctx: Context, message: String) = ReplyRules.templateReply(rules(ctx), message, fallbackEnabled(ctx), fallback(ctx))
     fun suggestion(ctx: Context, message: String) = templateReply(ctx, message).orEmpty()
     fun text(ctx: Context, key: String) = prefs(ctx).getString(key, "").orEmpty()
-    fun saveText(ctx: Context, key: String, value: String) { prefs(ctx).edit().putString(key, value).apply() }
+    fun saveText(ctx: Context, key: String, value: String) { synchronized(DriveBackups) { prefs(ctx).edit().putString(key, value).apply(); DriveBackups.changed(ctx) } }
     fun profile(ctx: Context) = JSONObject().put("instructions", text(ctx, "instructions").take(2000))
         .put("facts", text(ctx, "facts").take(3000)).put("examples", text(ctx, "examples").take(2000))
     fun clear(ctx: Context) { prefs(ctx).edit().clear().apply() }

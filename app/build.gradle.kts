@@ -2,7 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "bd.app.aismartreply"
     compileSdk = 36
-    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 36; versionCode = 15; versionName = "0.4.4-voice-writer-preview" }
+    defaultConfig { applicationId = "bd.app.aismartreply"; minSdk = 26; targetSdk = 36; versionCode = 16; versionName = "0.4.5-drive-backup-preview" }
     val permanentStore = System.getenv("ANDROID_KEYSTORE_PATH")
     if (!permanentStore.isNullOrBlank()) {
         signingConfigs {
