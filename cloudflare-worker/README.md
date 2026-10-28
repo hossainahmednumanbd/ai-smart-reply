@@ -42,3 +42,29 @@ The Android GitHub Actions build is separate and does not deploy this Worker.
   Gemini quota, access, model, request, and provider failures without returning the API key.
 
 The other Worker files in this repository are not used by the root deployment configuration.
+
+## Reproducible Git builds and direct Actions deployment
+
+The repository root now pins Wrangler 4.154.0 with a lockfile and requires Node 22+.
+Run `npm ci`, `npm run build`, and `npm run test:worker` from the root.
+`npm run deploy` targets the existing Worker through `wrangler.jsonc`.
+The existing `npx wrangler deploy` Cloudflare build command also uses this pinned local Wrangler.
+
+`.github/workflows/worker.yml` checks syntax, all backend tests, and a no-write Wrangler dry run.
+On authorized pushes to main or the voice feature branch it checks whether the standard
+`CLOUDFLARE_API_TOKEN` GitHub repository secret already exists. It reports presence only,
+never the value. If present, it deploys the existing Worker in the account associated with
+this project's Cloudflare build checks, preserving current runtime variables/secrets and D1.
+No deployment runs from a pull request. No token is created, copied, or requested by the workflow.
+
+If the token is absent, deployment steps are skipped and the Actions summary explicitly says
+no production deployment occurred. A green validation job alone does not mean the server is live.
+The Cloudflare Git integration has its own build credentials; those do not automatically become
+GitHub Actions secrets. The separate Cloudflare check run must also be inspected for its outcome.
+
+After a real deployment, `scripts/verify_worker_live.py` requires a health response containing
+`voice_writer: true`, plus authenticated `/voice` and `/reply` route contracts (401 without a token).
+That verifies rollout and retained authentication, not a successful real Gemini request.
+Test with the signed-in Android app before claiming full voice integration is complete.
+
+Voice model selection is isolated: `VOICE_GEMINI_MODEL` overrides the voice default `gemini-2.5-flash`; voice never inherits the legacy `/reply` `GEMINI_MODEL`. A model listed with zero quota in AI Studio must not be assumed usable. Provider quota failures are still surfaced without changing model to bypass rate limits.

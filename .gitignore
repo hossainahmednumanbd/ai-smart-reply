@@ -11,3 +11,10 @@ local.properties
 signing-secret.txt
 recovery.json
 *signing-backup*.zip
+
+.kotlin/
+node_modules/
+.wrangler/
+.dev.vars*
+.env
+.env.*

@@ -1,0 +1,13 @@
+{
+  "name": "ai-smart-reply-worker",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node --check cloudflare-worker/src/index.js && node --check cloudflare-worker/src/voice.js",
+    "test:worker": "node --test cloudflare-worker/tests/*.test.mjs",
+    "deploy": "wrangler deploy --config wrangler.jsonc",
+    "preview:worker": "wrangler preview --config wrangler.jsonc"
+  },
+  "devDependencies": { "wrangler": "4.154.0" }
+}

@@ -19,12 +19,13 @@ object GoogleAuth {
         return GoogleSignIn.getClient(ctx, options)
     }
     fun account(ctx: Context): GoogleSignInAccount? = GoogleSignIn.getLastSignedInAccount(ctx)
-    fun signIn(activity: Activity) { activity.startActivityForResult(client(activity).signInIntent, REQUEST_CODE) }
+    fun signIn(activity: Activity) { DriveBackups.disconnect(activity); activity.startActivityForResult(client(activity).signInIntent, REQUEST_CODE) }
     fun handleResult(data: Intent?): Result<GoogleSignInAccount> = runCatching {
         GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
             ?: error("Google account not available")
     }
     fun signOut(ctx: Context, complete: () -> Unit) {
+        DriveBackups.disconnect(ctx)
         client(ctx).signOut().addOnCompleteListener { complete() }
     }
     /** Silent sign-in refreshes expired Google ID tokens when possible. */
