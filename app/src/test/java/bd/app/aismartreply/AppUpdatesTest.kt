@@ -34,4 +34,9 @@ class AppUpdatesTest {
         val feed = JSONArray().put(JSONObject()).put(release(99, url = "https://evil.test/a.apk")).put(release(16))
         assertEquals(16L, AppUpdates.newest(feed, 15, true)?.code)
     }
+    @Test fun updateDialogOmitsReleaseChecksumsButKeepsUserChanges() {
+        val hash = "a".repeat(64)
+        val notes = "নতুন ব্যাকআপ সুবিধা\nSHA-256: `$hash`\n$hash\nআগের অ্যাপের ওপর আপডেট দিন"
+        assertEquals("নতুন ব্যাকআপ সুবিধা\nআগের অ্যাপের ওপর আপডেট দিন", AppUpdates.userNotes(notes))
+    }
 }

@@ -43,11 +43,16 @@ object AppUpdates {
                 val code = match.groupValues[1].toLongOrNull() ?: continue
                 val url = asset.optString("browser_download_url")
                 if (code <= installed || asset.optString("state") != "uploaded" || !safeDownload(url)) continue
-                updates += Update(code, release.optString("name").take(100), url, release.optString("body").take(1600))
+                updates += Update(code, release.optString("name").take(100), url, userNotes(release.optString("body")))
             }
         }
         return updates.maxByOrNull { it.code }
     }
+
+    // Release checksums remain public on GitHub for verification, outside the app's update dialog.
+    internal fun userNotes(body: String): String = body.lineSequence()
+        .filterNot { it.contains("SHA-256", true) || it.contains("SHA256", true) || Regex(".*[a-fA-F0-9]{64}.*").matches(it) }
+        .joinToString("\n").trim().take(1600)
 
     @Suppress("DEPRECATION")
     fun check(activity: Activity, manual: Boolean = false) {

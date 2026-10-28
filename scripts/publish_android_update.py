@@ -21,9 +21,9 @@ digest = hashlib.sha256(asset.read_bytes()).hexdigest()
 notes = Path("release-apk/notes.md")
 notes.write_text(
     f"পরীক্ষামূলক আপডেট {name} ({code})।\n\n"
-    "নিজের Google Drive-এ টেমপ্লেট, ব্যবসার তথ্য ও AI নির্দেশনা ব্যাকআপ এবং নতুন ফোনে Restore যোগ হয়েছে। "
-    "Settings থেকে আলাদা অনুমতি দিয়ে চালু করতে হবে। Google Cloud-এ Drive API চালু থাকা প্রয়োজন; বাস্তব Drive backup/restore পরীক্ষা বাকি। "
-    "হোম ডিজাইন ও আগের Auto Reply অক্ষত আছে।\n\n"
+    "হোমের Google অ্যাকাউন্টের তথ্য সেটিংসে নেওয়া হয়েছে। আপডেটের পর্দা সহজ করা হয়েছে। "
+    "Drive ব্যাকআপের সরাসরি বাটন, সফল হওয়ার সময় এবং ব্যর্থতার স্পষ্ট বার্তা যোগ হয়েছে। "
+    "Google লগইন করলেই ব্যাকআপ হয় না; Settings থেকে Drive অনুমতি দিতে হবে। বাস্তব Drive backup/restore পরীক্ষা বাকি।\n\n"
     "APK ডাউনলোড করে আগের অ্যাপের ওপর Update দিন। আনইনস্টল করবেন না। "
     "এটি preview; ফোনে যাচাই চলছে।\n\n"
     f"SHA-256: `{digest}`\n")

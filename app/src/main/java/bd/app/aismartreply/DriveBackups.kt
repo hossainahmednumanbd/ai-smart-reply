@@ -35,7 +35,9 @@ object DriveBackups {
     }
     fun status(ctx: Context): String {
         val p = prefs(ctx)
-        if (!active(ctx)) return "Drive ব্যাকআপ বন্ধ। Google অ্যাকাউন্টে লগইন করে চালু করুন।"
+        if (!active(ctx)) return (if (owner(ctx).isBlank()) "Drive ব্যাকআপ বন্ধ। আগে Google দিয়ে লগইন করুন।"
+            else "Google অ্যাকাউন্ট সংযুক্ত। Drive ব্যাকআপ এখনো চালু হয়নি; ব্যাকআপ চালু / অনুমতি দিন চাপুন।") +
+            p.getString("error", "").orEmpty().let { if (it.isBlank()) "" else "\nসর্বশেষ চেষ্টা ব্যর্থ: $it" }
         val last = p.getLong("last", 0)
         val time = if (last == 0L) "এখনো সফল ব্যাকআপ হয়নি" else "সর্বশেষ সফল ব্যাকআপ: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(last))
         val pending = p.getLong("revision", 0) != p.getLong("saved_revision", -1)
@@ -43,7 +45,7 @@ object DriveBackups {
             (if (pending) "পরিবর্তন ব্যাকআপের অপেক্ষায়। " else "এই ফোনের পরিবর্তন সংরক্ষিত। ") + p.getString("error", "")
     }
     @Synchronized fun disconnect(ctx: Context) {
-        prefs(ctx).edit().remove("owner").remove("pending_owner").remove("pending_action").remove("session").apply()
+        prefs(ctx).edit().remove("owner").remove("pending_owner").remove("pending_action").remove("session").remove("error").apply()
         ctx.getSystemService(JobScheduler::class.java).cancel(JOB)
     }
     @Synchronized fun changed(ctx: Context) {
@@ -75,6 +77,17 @@ object DriveBackups {
                 }.setNegativeButton("বন্ধ", null).show()
             }.setNegativeButton("বন্ধ", null).show()
     }
+    fun start(activity: Activity, operation: String) {
+        if (operation == "backup" && !active(activity)) { authorize(activity, "setup"); return }
+        authorize(activity, operation)
+    }
+    private fun failed(activity: Activity, expected: String, message: String) {
+        if (!matches(activity, expected)) return
+        prefs(activity).edit().putString("error", message).apply()
+        if (!activity.isDestroyed && !activity.isFinishing) AlertDialog.Builder(activity)
+            .setTitle("Drive ব্যাকআপ সম্পূর্ণ হয়নি").setMessage(message + "\n\nফোনের তথ্য অক্ষত আছে। সফল ব্যাকআপের সময় না দেখা পর্যন্ত ব্যাকআপ নিশ্চিত নয়।")
+            .setPositiveButton("ঠিক আছে", null).show()
+    }
     private fun toast(ctx: Context, text: String) = Toast.makeText(ctx, text, Toast.LENGTH_LONG).show()
     private fun authorize(activity: Activity, action: String) {
         val expected = owner(activity)
@@ -88,7 +101,7 @@ object DriveBackups {
                         .onFailure { toast(activity, "Google-এর অনুমতির পেজ খুলতে পারেনি") }
                 } else result.accessToken?.let { action(activity, expected, action, it) }
                     ?: toast(activity, "Drive-এর অনুমতি পাওয়া যায়নি")
-            }.addOnFailureListener { toast(activity, "Drive সংযোগ হয়নি। Google Drive API ও অনুমতির সেটিং পরীক্ষা করুন।") }
+            }.addOnFailureListener { failed(activity, expected, "Google Drive-এর অনুমতি পাওয়া যায়নি। আবার অনুমতি দিন; Google Cloud-এর OAuth সেটিংও পরীক্ষা করুন।") }
     }
     fun result(activity: Activity, resultCode: Int, data: Intent?) {
         val p = prefs(activity); val expected = p.getString("pending_owner", "").orEmpty()
@@ -122,7 +135,7 @@ object DriveBackups {
                             .setNeutralButton("ফোনের বর্তমান তথ্য ব্যাকআপ") { _, _ -> confirmCurrent(activity, expected, token) }
                             .setNegativeButton("পরে", null).show()
                     }
-                }.onFailure { toast(activity, it.message ?: "Drive-এ সংযোগ হয়নি") }
+                }.onFailure { failed(activity, expected, it.message ?: "Drive-এ সংযোগ হয়নি") }
             }
         }
     }
@@ -166,11 +179,14 @@ object DriveBackups {
     private fun manualUpload(activity: Activity, expected: String, token: String) {
         executor.execute { val result = runCatching { upload(activity.applicationContext, expected, token) }
             if (result.isFailure && matches(activity, expected) && active(activity)) {
-                prefs(activity).edit().putString("error", "ব্যাকআপ হয়নি; আবার চেষ্টা হবে।").apply()
+                prefs(activity).edit().putString("error", result.exceptionOrNull()?.message ?: "ব্যাকআপ হয়নি; আবার চেষ্টা হবে।").apply()
                 schedule(activity.applicationContext)
             }
-            main.post { if (!activity.isDestroyed && matches(activity, expected)) toast(activity,
-                if (result.isSuccess) "Google Drive-এ ব্যাকআপ হয়েছে" else result.exceptionOrNull()?.message ?: "ব্যাকআপ হয়নি") }
+            main.post { if (!activity.isDestroyed && matches(activity, expected)) {
+                if (result.isSuccess) AlertDialog.Builder(activity).setTitle("ব্যাকআপ সফল হয়েছে")
+                    .setMessage(status(activity)).setPositiveButton("ঠিক আছে", null).show()
+                else failed(activity, expected, result.exceptionOrNull()?.message ?: "ব্যাকআপ হয়নি")
+            } }
         }
     }
     @Synchronized private fun snapshot(ctx: Context, expected: String): Triple<Long, String, String> {

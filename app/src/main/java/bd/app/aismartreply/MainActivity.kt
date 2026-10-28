@@ -182,12 +182,6 @@ class MainActivity : Activity() {
         val brand = ImageView(this).apply { setImageResource(R.drawable.app_logo); contentDescription = "AI Smart Reply লোগো" }
         column.addView(brand, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(10) })
         heading("AI Smart Reply", "১৮+ ব্যবহারকারীর ব্যবসায়িক রিপ্লাই সহকারী")
-        val signedIn = GoogleAuth.account(this)
-        val accountCard = card()
-        accountCard.addView(label(if (signedIn == null) "Google অ্যাকাউন্ট সংযুক্ত নয়" else "✓ Google: ${signedIn.email ?: "লগইন করা আছে"}", 15f, dark, true))
-        accountCard.addView(space(10))
-        accountCard.addView(action(if (signedIn == null) "Google দিয়ে লগইন করুন" else "অ্যাকাউন্ট পরিবর্তন করুন", { GoogleAuth.signIn(this) }, false))
-        addCard(accountCard)
         val banner = vertical().apply {
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(blue, Color.rgb(33, 175, 249))).apply { cornerRadius = dp(20).toFloat() }
             setPadding(dp(20), dp(23), dp(20), dp(23))
@@ -676,7 +670,10 @@ class MainActivity : Activity() {
         val backup = card()
         backup.addView(label("Google Drive ব্যাকআপ", 19f, dark, true))
         backupStatusLabel = label(DriveBackups.status(this), 13f, muted).also { backup.addView(it) }
-        backup.addView(action("ব্যাকআপ চালু / ফিরিয়ে আনুন", { DriveBackups.show(this) { render() } }, false))
+        backup.addView(action("ব্যাকআপ চালু / অনুমতি দিন", { DriveBackups.start(this, "setup") }, false))
+        backup.addView(action("এখনই ব্যাকআপ করুন", { DriveBackups.start(this, "backup") }, false))
+        backup.addView(action("Drive থেকে ফিরিয়ে আনুন", { DriveBackups.start(this, "restore") }, false))
+        backup.addView(action("আরও অপশন", { DriveBackups.show(this) { render() } }, false))
         backup.addView(label("টেমপ্লেট, ব্যবসার তথ্য ও AI নির্দেশনা নিজের Drive-এ রাখুন। নতুন ফোনে একই Google অ্যাকাউন্টে অনুমতি দিয়ে ফিরিয়ে আনুন। সফল ব্যাকআপের সময় দেখে নিশ্চিত হোন।", 13f, muted))
         addCard(backup)
         val notice = card()

@@ -38,4 +38,13 @@ class DriveBackupApiTest {
         assertTrue(runCatching { api.upload("x".repeat(BackupData.MAX_BYTES + 1)) }.isFailure)
         assertEquals(0, calls)
     }
+    @Test fun providerErrorsAreActionableWithoutExposingRawDetails() {
+        val disabled = """{"error":{"details":[{"reason":"SERVICE_DISABLED"}],"message":"private-token"}}"""
+        assertTrue(DriveBackupApi.failureMessage(403, disabled).contains("Drive API চালু নেই"))
+        assertFalse(DriveBackupApi.failureMessage(403, disabled).contains("private-token"))
+        assertTrue(DriveBackupApi.failureMessage(403, """{"error":{"errors":[{"reason":"storageQuotaExceeded"}]}}""").contains("জায়গা শেষ"))
+        assertTrue(DriveBackupApi.failureMessage(403, """{"error":{"details":[{"reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}""").contains("অনুমতি সম্পূর্ণ হয়নি"))
+        assertTrue(DriveBackupApi.failureMessage(403, "not json secret").contains("403"))
+        assertFalse(DriveBackupApi.failureMessage(403, "not json secret").contains("secret"))
+    }
 }
